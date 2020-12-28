@@ -26,24 +26,22 @@ describe('getAnchorMatches', () => {
 })
 
 describe('getCuesForTranscript', () => {
-  it('has no repeat/out of order indexes', () => {
-    const transcript = rashomon
-    const chunks = parseSync(rashomonSrt).map((n, i) => ({
-      text: typeof n.data === 'string' ? n.data : n.data.text,
-      index: i,
-    }))
-    // TODO: check unmatched as well
-    const { matches } = getCuesForTranscript(transcript, chunks)
+  const transcript = rashomon
+  const chunks = parseSync(rashomonSrt).map((n, i) => ({
+    text: typeof n.data === 'string' ? n.data : n.data.text,
+    index: i,
+  }))
+  // TODO: check unmatched as well
+  const { matches } = getCuesForTranscript(transcript, chunks)
 
-    const segments = matches.flatMap((m) => m.transcriptSegmentIndexes)
-    const chunksIndexes = matches.flatMap((m) => m.subtitlesChunkIndexes)
+  const segments = matches.flatMap((m) => m.transcriptSegmentIndexes)
+  const chunksIndexes = matches.flatMap((m) => m.subtitlesChunkIndexes)
 
-
-    // expect({ segments, chunks: chunksIndexes }).toEqual({
-    //   segments: [...new Set(segments)],
-    //   chunks: [...new Set(chunksIndexes)],
-    // })
+  it('has no repeat/out of order segment indexes', () => {
     expect(segments).toEqual([...new Set(segments)])
+  })
+
+  it('has no repeat/out of order chunk indexes', () => {
     expect(chunksIndexes).toEqual([...new Set(chunksIndexes)])
   })
 })
