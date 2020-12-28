@@ -1,0 +1,70 @@
+
+// http://www.maxallancollins.com/nate/Honyaku/Rashomon/rashomon-1.php
+const en = `Our story begins after nightfall.
+
+Under the Rashō Gate, a servant waited for the rain to cease. He was alone in the wide space—alone, but for a single cricket that had come to rest along one of the gate's massive columns, its red lacquer peeling here and there. Given the Rashō Gate's location astride Suzaku Avenue, one might expect to the see at least two or three others waiting out the rain, perhaps a woman's painted bamboo hat or the cap of a court official. Yet the man was alone.
+
+You see, for the past few years, disasters such as earthquakes, whirlwinds, fire, and famine had been ongoing occurrences in Kyōto. The devastation inside the capital was extreme. An old text tells of Buddhist images and altarpieces taken from temples and smashed up, the ornately decorated wood—red lacquered, silver adorned, gilded—stacked along the side of the road to be sold as kindling. Because of events inside the capital, maintenance of the Rashō Gate was, even more than before, neglected and finally forgotten. Taking advantage of that abandonment, petty crooks came to roost. Thieves came to roost. And in the end, it even became common for the unclaimed dead to be dumped there. By then, the gate had become so unsavory that nobody would set foot near it after dark.
+
+Instead, crows came to gather in great numbers. In daylight, you could see any number cawing as they flew circles around the gate's ornate tiled roof. And at sunset, they stood out like sesame seeds scattered across the reddened sky. Naturally, the crows came to pick at the meat of corpses left at the gate—although on that day, possibly due to the late hour, not even a single bird could be seen. Only, here and there, hardened white crow droppings dotted the crumbling, overgrown stone steps. The servant, in a blue kimono once dark but now faded from over-washing, sat on the uppermost of seven steps and picked at a large pimple on his right cheek as he absent-mindedly watched the falling rain.
+
+Previously I wrote, "A servant waited for the rain to cease." But even if the rain were to stop, the servant would have no particular aim. Normally, of course, he would need to return to his lord's house, but he had been discharged from service several days earlier. As I said, Kyōto was in a severe decline. This servant's dismissal by his lord after many years of service was nothing but a small consequence of this deterioration. Therefore, when I wrote, "A servant waited for the rain to cease," it would have been more accurate to say, "A servant, caught in the rain, was at a loss because he had no place to go." Furthermore, this weather had a considerable influence on the sentimentalisme of this Heian-era servant. The rain, which had begun in the late afternoon, still showed no sign of letting up. And so the servant, half-listening to the rain falling on Suzaku Avenue, thought only about how to get through the next day—that is, he couldn't keep his mind from wandering onto how he could get out of this impossible situation.
+
+As the rain enveloped Rashō Gate, the sound of rushing water came from a distance. With the evening light steadily fading, the tip of a slanted ridge tile, protruding from the gate's roof, seemed to prop up an immense, dim cloud.
+
+The servant lacked the luxury of choosing how to get out of this impossible situation. If he decided to stick to his morals, his next choice would simply be whether to starve to death at the base of a pounded-earth wall, or in the dirt alongside the road. And just like that, he would be brought up into the gate and abandoned there as if he were but a dead dog. If he were to abandon his morals . . . well, however many times he might think about it, his thoughts always returned to the same place. He couldn't bring himself to make that "if" anything but an "if." Even accepting the idea that no other option remained, even if he could get past the "if," he failed to possess courage enough to acknowledge the inevitable conclusion: "I have no choice but to become a thief."
+
+The servant let out a loud sneeze and, as if undertaking a great effort, stood up. The chilly Kyōto evening was cold enough to leave him wishing for the warmth of a brazier. Wind blew in through the gate's pillars, accompanied by darkness. The cricket once perched by the red lacquered column had already vanished into the night.
+
+Head lowered, his hunched shoulders draped with a tattered blue kimono and undergarments yellowed from sweat, the servant surveyed his surroundings. If he could find a place to sleep in comfort, for just one night, sheltered from the wind and the rain and the view of others, he would spend the night there. Continuing his search, he stepped up into the Gate of Luck where he found a wide ladder—it, too, painted in red lacquer. Even if anyone were up there, they would surely be dead. The servant, taking care to keep his long sword safe in its scabbard, placed a sandal-shod foot on the lowest rung of the ladder.
+
+Minutes later, halfway up the wide ladder to the Rashō Gate tower, the man arched his back as if he were a cat and silently held his breath while assessing the situation. A flame from above bathed his right cheek in a dim light. It was a cheek with a red pus-filled pimple poking out through stubble. When he had first started up the ladder into the tower, the servant expected to find nothing but dead bodies within. But from this vantage point, he could see that someone above had lit a torch. Even more, the murky, yellow light seemed to be moving about, projecting swaying shadows across the ceiling's thick layer of spider webs. No normal person would be lighting a torch up inside the Rashō Gate on this rainy evening.
+
+The servant, stepping as silently as a lizard, crept near the top of the ladder. Flattening his body against the wall as much as he could, stretching his neck forward as much as he could, trembling with fear, he peeked inside. Just as he had heard, a number of corpses lay within, discarded there, but because the firelight's reach fell short, he could not tell how many bodies there were. In the vaguely lit room, he could tell only that some were naked and some were clothed. Needless to say, males and females alike were mixed together. The bodies, scattered on the floor like clay dolls, mouths gaping, arms outstretched, made him question even that they had once lived and breathed. Moreover, the bodies, as eternally silent as a deaf-mute, caught the faint light of the flame only on such elevated portions as their shoulders and chests, the rest in shadow seeming all the darker.
+
+Reflexively, the servant drew his hand up to cover his nose against the stench from the decomposing bodies. In the next instant, however, his hand dropped. A strong feeling swept over him and robbed him of his sense of smell.
+The servant saw, for the first time, a person crouching among the bodies—an old woman in a kimono the color of tree bark, short, slender, grey-haired, and monkey-like. The crone, a burning fragment of pine wood in her right hand, was peering into the face of one of the corpses. Judging from the length of its hair, this was probably the body of a woman.
+
+Moved by six parts fear and four parts curiosity, the servant forgot for a time even to breathe. To borrow a phrase from an ancient text, he felt as if "the hairs all over his head and body had fattened." The old woman wedged her pine torch between two floorboards, placed her hands around the neck of the corpse, and, like a monkey picking lice from its child, she began to pluck out one strand of the long hair at a time. The hair seemed to follow her hand as she plucked it.
+
+With each single strand of hair she plucked, the servant's terror slowly faded. And at the same time, he began to feel an intense hatred toward the old woman. No, to say he hated the old woman might be incorrect. More likely, he felt an enmity toward all evil, which grew stronger with every minute. If he were now pondering the question he had asked himself down below—to become a thief or to die from starvation—perhaps he would have chosen, without a hint of regret, to starve. His hatred of evil, like the old woman's torch still wedged into the floor, blazed now with a violent flame.
+
+The servant, of course, did not know why the old woman was pulling hair from the corpse. Therefore, he couldn't reasonably know enough to dismiss her action as good or evil. But from where he stood, on this rainy night above the Rashō Gate, just the act of pulling out the corpse's hair seemed an evil he could not condone. Of course, he had already forgotten that he had recently been debating whether or not to become a thief.
+
+The servant, summoning strength to his legs, flew to the top of the ladder. Once there, he placed his hand on the wooden hilt of his sword, and slowly, deliberately, walked over to the old woman. At the first sight of the servant, she shot up like a bolt snapping free from a crossbow, and began to scramble over the pile of corpses in a frantic attempt to escape.
+
+"Where do you think you're going?" growled the servant, stepping into her path. Undeterred, she tried to charge past him, but he stopped her with a shove.
+
+The two struggled silently among the bodies, although it was clear who would win from the very start. At last, the servant grasped her arm, twisting it, and forced her down to the ground. Just skin and bone, it was less a human arm than the leg of a chicken.
+"What were you doing? Well, what were you doing? Out with it! If you don't tell me, you'll answer to this!"
+
+The servant, letting go of the crone, flashed his sword from its scabbard and pointed the shining steel blade at her eye. But the old woman remained silent. Hands trembling, shaking with fear, her shoulders rising with each sharp breath, eyes open wide as if her eyeballs could pop out at any moment, she was as unyieldingly silent as a mute. The servant then comprehended his complete control over this woman's life and death. With that realization, his anger, burning with intense hatred, melted away. All that remained was a serene pride and satisfaction in a job well done. He looked down at the old woman and spoke gently.
+
+"I am not a guard. I am just a traveler who happened to pass by when I decided to take a look inside. So even if I were to tie you up, I wouldn't know what to do with you. If you would, just tell me what you are doing here."
+
+The old woman, opening her eyes even wider than before, steadily looked over the servant's face. Her eyelids red, she regarded him with the sharp gaze of a hawk. Then, her nose and lips, joined as one among wrinkled folds, moved as if she were chewing on something.
+
+Within her scrawny neck, her Adam's apple began to move. Then from her throat came a wheezing, gasping voice, like a crow cawing.
+
+"I was taking this hair, I was taking this hair, to make it into a wig."
+
+The servant was disappointed at how mundane her answer turned out to be. He was disappointed, but at the same time, his previous hatred swept over him with a cold contempt. That feeling, doubtless, would remain with him. The old woman, still holding in her hand a long hair snatched from the corpse's head, muttered haltingly in a voice like the murmuring of a frog.
+
+"Well, listen, I know that taking hair from a dead body might be wrong. But it's no sin to do something like that to the kind of people that end up here. This woman whose hair I have just been taking, for instance, used to cut snakes into five-inch strips, dry them, and sell them in the palace guardrooms as dried fish. If the plague hadn't killed her, she would probably still be going there to sell them. Even worse, her 'dried fish' supposedly tasted good, so the guards would always buy them to eat with their rice. Now, I don't think what she did was wrong. If she hadn't done it, she would have starved to death, so she couldn't help it. I don't think what I've been doing is wrong, either. If I don't do it, I would surely starve to death too, so I can't help it."
+
+That was basically what the old woman said.
+
+The servant had returned his sword to its sheath, but his left hand still rested on its hilt. Calmly, coldly, as he listened to her speak, his right hand, as usual, picked at the red, pus-filled pimple on his cheek. But as he listened, a courage welled up within him—a courage he had lacked beneath the gate, and a courage wholly different from when he climbed up into the tower and captured the old woman. Not only did the servant cease to worry about starving or becoming a thief, but he banished all such thoughts completely.
+
+"This woman knew what it was to face starvation," the crone was insisting. "She would understand, and I'm sure she would forgive me."
+
+"I'm sure she would," replied the servant, his voice now derisive. He advanced within a pace of her, and in one swift movement, drew his hand from the pimple on his cheek and grabbed her by the shoulder."Well then, I guess you wouldn't be upset if I stole your clothes," said the servant. "If I don't, I'll starve to death."
+
+Quickly, he stripped off her clothing. She was grasping after his legs when he kicked her down onto the pile of bodies. It was only five steps back to the ladder, where the servant folded the tree-colored kimono under his arm and scrambled down and back into the night.
+
+The old woman remained among the naked corpses for a short time, as if she too were dead. But soon she rose, moaning, groaning, and with the aid of the still-burning torch, she crept to the top of the ladder. She peered down into the bottom of the gate, her short white hair dangling.
+
+Nothing awaited below but the cavern of night, empty and black.
+
+The servant, oblivious to the rain, had already hurried off into the streets of Kyōto to pursue his new life as a thief.
+`
