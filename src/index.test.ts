@@ -1,4 +1,4 @@
-import { getCuesForTranscript, getProbableMatches, getTranscriptSegments } from './getCuesForTranscript'
+import { getCuesForTranscript, getAnchorMatches, getTranscriptSegments } from './getCuesForTranscript'
 import { miira, miiraSrt } from './miira'
 import { parseSync } from 'subtitle'
 
@@ -9,28 +9,37 @@ describe('getTranscriptSegments', () => {
   })
 })
 
-describe('getExtremelyProbableMatches', () => {
+describe('getAnchorMatches', () => {
   it('gets a reasonable number of matches', () => {
     const transcript = miira
     const cues = getTranscriptSegments(transcript)
-    const chunks = parseSync(miiraSrt).map((n) => ({ text: typeof n.data === 'string' ? n.data : n.data.text }))
+    const chunks = parseSync(miiraSrt).map((n, i) => ({
+      text: typeof n.data === 'string' ? n.data : n.data.text,
+      index: i,
+    }))
     expect(chunks.length).toBeGreaterThan(10)
-    const ex = getProbableMatches(cues, miira, chunks, 18, 2)
+    const ex = getAnchorMatches(cues, miira, chunks).matches
 
     expect(ex.length).toBeGreaterThan(10)
     expect(ex.length).toBeLessThan(chunks.length)
-
-    // console.log(ex.map((({ transcriptSegmentIndex, subtitlesChunkIndex}) => ({
-    //   t: transcript.slice(cues[transcriptSegmentIndex].start,  cues[transcriptSegmentIndex].end),
-    //   s: chunks[subtitlesChunkIndex].text,
-    // }))))
   })
 })
 
 describe('getCuesForTranscript', () => {
-  it('temp', () => {
+  it('has no repeat indexes', () => {
     const transcript = miira
-    const chunks = parseSync(miiraSrt).map((n) => ({ text: typeof n.data === 'string' ? n.data : n.data.text }))
-    getCuesForTranscript(transcript, chunks)
+    const chunks = parseSync(miiraSrt).map((n, i) => ({
+      text: typeof n.data === 'string' ? n.data : n.data.text,
+      index: i,
+    }))
+    const { matches } = getCuesForTranscript(transcript, chunks)
+
+    const segments = matches.flatMap((m) => m.transcriptSegmentIndexes)
+    const chunksIndexes = matches.flatMap((m) => m.subtitlesChunkIndexes)
+
+    expect({ segments, chunks: chunksIndexes }).toEqual({
+      segments: [...new Set(segments)],
+      chunks: [...new Set(chunksIndexes)],
+    })
   })
 })

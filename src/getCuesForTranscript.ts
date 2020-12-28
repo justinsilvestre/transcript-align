@@ -1,18 +1,15 @@
 import * as levenshtein from 'fast-levenshtein'
 
-type Cue = {
-  transcriptStart: number
-  transcriptEnd: number
-  correspondingSegmentIndexes: number[]
-}
-
 type SegmentChunkMatch = {
+  /** always at least one present */
   transcriptSegmentIndexes: number[]
+  /** always at least one present */
   subtitlesChunkIndexes: number[]
-  unmatchedBefore?: Unmatched
-  unmatchedAfter?: Unmatched
 }
-type Unmatched = { transcriptSegments: { start: number; end: number }[]; subtitlesChunks: { text: string }[] }
+type Unmatched = {
+  transcriptSegments: { start: number; end: number; index: number }[]
+  subtitlesChunks: { text: string }[]
+}
 
 type Options = {
   transcriptSegmenters: RegExp
@@ -28,18 +25,39 @@ const defaultOptions = {
 
 export function getCuesForTranscript(
   transcript: string,
-  subtitlesChunks: { text: string }[],
+  subtitlesChunks: { text: string; index: number }[],
   givenOptions: Options = defaultOptions,
-): Cue[] {
+) {
   const options = {
     ...defaultOptions,
     ...givenOptions,
   }
   const transcriptSegments = getTranscriptSegments(transcript, options)
-  const extremelyProbableMatches = getProbableMatches(
-    transcriptSegments, transcript, subtitlesChunks, options.segmentationFirstPassAnchorLength, 2)
+  const anchorMatches = getAnchorMatches(transcriptSegments, transcript, subtitlesChunks, options)
 
-  const unresolvedSegmentsAndChunks = extremelyProbableMatches.flatMap((x) => x.unmatchedAfter || [])
+  const secondPass = continueMatching(anchorMatches, transcriptSegments, transcript, subtitlesChunks, 10, 2)
+  const thirdPass = continueMatching(secondPass, transcriptSegments, transcript, subtitlesChunks, 9, 2)
+  const fourthPass = continueMatching(thirdPass, transcriptSegments, transcript, subtitlesChunks, 8, 2)
+  const fifthPass = continueMatching(fourthPass, transcriptSegments, transcript, subtitlesChunks, 7, 2)
+  const sixthPass = continueMatching(fifthPass, transcriptSegments, transcript, subtitlesChunks, 6, 2)
+  const seventhPass = continueMatching(sixthPass, transcriptSegments, transcript, subtitlesChunks, 5, 2)
+  const eighthPass = continueMatching(seventhPass, transcriptSegments, transcript, subtitlesChunks, 4, 2)
+  const ninthPass = continueMatching(eighthPass, transcriptSegments, transcript, subtitlesChunks, 3, 2)
+
+  const tenthPass = continueMatching(ninthPass, transcriptSegments, transcript, subtitlesChunks, 5, 3)
+  const eleventhPass = continueMatching(tenthPass, transcriptSegments, transcript, subtitlesChunks, 5, 4)
+  const twelfthPass = continueMatching(eleventhPass, transcriptSegments, transcript, subtitlesChunks, 5, 5)
+  const thirteenthPass = continueMatching(twelfthPass, transcriptSegments, transcript, subtitlesChunks, 5, 6)
+
+  // first find longest? tiny-distance matches
+  // then try different combinations/concatenations.
+  // repeat with higher and higher distance thresholds.
+
+  const final = thirteenthPass
+
+  const unresolvedSegmentsAndChunks = final.unmatched
+
+  const logMatches = final.matches
 
   console.log(
     unresolvedSegmentsAndChunks.map((ur) => {
@@ -48,76 +66,198 @@ export function getCuesForTranscript(
       return { tr, su }
     }),
   )
+  console.log(logMatches)
 
   // group unresolved transcript segments + unresolved subs chunks
   // const unresolvedTranscriptSegmentGroups
 
   // in each group, try matching groups of chunks with groups? of segments
 
-  return []
+  return final
 }
 
-export function getProbableMatches(
-  transcriptSegments: { start: number; end: number }[],
+export function getAnchorMatches(
+  transcriptSegments: { start: number; end: number; index: number }[],
   transcript: string,
-  subtitlesChunks: { text: string }[],
+  subtitlesChunks: { text: string; index: number }[],
+  options: { transcriptSegmenters: RegExp; segmentationFirstPassAnchorLength: number } = defaultOptions,
+) {
+  return getProbableMatches(transcriptSegments, transcript, subtitlesChunks, {
+    minMatchLength: options.segmentationFirstPassAnchorLength,
+    levenshteinThreshold: 2,
+    transcriptSegmentsStartIndex: 0,
+    transcriptSegmentsEnd: transcriptSegments.length,
+    subtitlesChunksStartIndex: 0,
+    subtitlesChunksEnd: subtitlesChunks.length,
+  })
+}
+
+function continueMatching(
+  prevMatches: { matches: SegmentChunkMatch[]; unmatched: Unmatched[] },
+  transcriptSegments: { start: number; end: number; index: number }[],
+  transcript: string,
+  subtitlesChunks: { text: string; index: number }[],
   minMatchLength: number,
   levenshteinThreshold: number,
 ) {
+  const matches: SegmentChunkMatch[] = []
+  const unmatched: Unmatched[] = []
+  let i = 0
+  for (const match of prevMatches.matches) {
+    const previousMatch: SegmentChunkMatch | null = prevMatches.matches[i - 1] || null
+    const nextMatch: SegmentChunkMatch | null = prevMatches.matches[i + 1] || null
+    const before = getProbableMatches(transcriptSegments, transcript, subtitlesChunks, {
+      minMatchLength,
+      levenshteinThreshold,
+      transcriptSegmentsStartIndex: previousMatch
+        ? previousMatch.transcriptSegmentIndexes[previousMatch.transcriptSegmentIndexes.length - 1] + 1
+        : 0,
+      transcriptSegmentsEnd: match.transcriptSegmentIndexes[0],
+      subtitlesChunksStartIndex: previousMatch
+        ? previousMatch.subtitlesChunkIndexes[previousMatch.subtitlesChunkIndexes.length - 1] + 1
+        : 0,
+      subtitlesChunksEnd: match.subtitlesChunkIndexes[0],
+    })
+    // const after: any = null
+    const after =
+      i === prevMatches.matches.length - 1
+        ? getProbableMatches(transcriptSegments, transcript, subtitlesChunks, {
+            minMatchLength,
+            levenshteinThreshold,
+            transcriptSegmentsStartIndex: match.transcriptSegmentIndexes[match.transcriptSegmentIndexes.length - 1] + 1,
+            transcriptSegmentsEnd: nextMatch ? nextMatch.transcriptSegmentIndexes[0] : transcriptSegments.length,
+            subtitlesChunksStartIndex: match.subtitlesChunkIndexes[match.subtitlesChunkIndexes.length - 1] + 1,
+            subtitlesChunksEnd: nextMatch ? nextMatch.subtitlesChunkIndexes[0] : subtitlesChunks.length,
+          })
+        : null
+    matches.push(...before.matches, match, ...(after?.matches || []))
+    unmatched.push(...before.unmatched, ...(after?.unmatched || []))
 
-  const matches = transcriptSegments.reduce((matches, { start, end }, index) => {
+    i++
+  }
+  return { matches, unmatched }
+}
+
+export function getProbableMatches(
+  transcriptSegments: { start: number; end: number; index: number }[],
+  transcript: string,
+  subtitlesChunks: { text: string; index: number }[],
+  options: {
+    minMatchLength: number
+    levenshteinThreshold: number
+    transcriptSegmentsStartIndex: number
+    transcriptSegmentsEnd: number
+    subtitlesChunksStartIndex: number
+    subtitlesChunksEnd: number
+  },
+) {
+  const {
+    minMatchLength,
+    levenshteinThreshold,
+    transcriptSegmentsStartIndex,
+    transcriptSegmentsEnd,
+    subtitlesChunksStartIndex,
+    subtitlesChunksEnd,
+  } = options
+  const matches: SegmentChunkMatch[] = []
+  const unmatched: Unmatched[] = []
+
+  for (let index = transcriptSegmentsStartIndex; index < transcriptSegmentsEnd; index++) {
+    const { start, end } = transcriptSegments[index]
     const segment = transcript.slice(start, end)
 
     const normalizedSegment = normalizeText(segment)
     if (normalizedSegment.length >= minMatchLength) {
-      // const lastMatch = matches[matches.length - 1] || null
-      // if (lastMatch)
-      const subtitlesChunkMatchIndex = subtitlesChunks.findIndex(({ text }) => {
-        const normalizedSubtitlesChunkSegment = normalizeText(text)
-        // console.log({ normalizedSegment, normalizedSubtitlesChunkSegment})
-        const distance = levenshtein.get(normalizedSegment, normalizedSubtitlesChunkSegment)
-        // console.log(distance)
+      const subtitlesChunkMatchIndex = findIndexBetween(
+        subtitlesChunks,
+        subtitlesChunksStartIndex,
+        subtitlesChunksEnd,
+        ({ text }) => {
+          const normalizedSubtitlesChunkSegment = normalizeText(text)
+          const distance = levenshtein.get(normalizedSegment, normalizedSubtitlesChunkSegment)
+          return distance <= levenshteinThreshold
+        },
+      )
 
-        return distance <= levenshteinThreshold
-      })
-
-      if (subtitlesChunkMatchIndex != -1) {
-        matches.push({
+      const matchFound = subtitlesChunkMatchIndex != -1
+      if (matchFound) {
+        const match = {
           transcriptSegmentIndexes: [index],
           subtitlesChunkIndexes: [subtitlesChunkMatchIndex],
-        })
+        }
+
+        const previousMatch = matches[matches.length - 1]
+        const priorUnmatchedSegmentsStartIndex = previousMatch
+          ? previousMatch.transcriptSegmentIndexes[previousMatch.transcriptSegmentIndexes.length - 1] + 1
+          : transcriptSegmentsStartIndex
+        const priorUnmatchedChunksStartIndex = previousMatch
+          ? previousMatch.subtitlesChunkIndexes[previousMatch.subtitlesChunkIndexes.length - 1] + 1
+          : subtitlesChunksStartIndex
+        const unresolvedSegmentsBeforeMatch = transcriptSegments.slice(
+          // todo: what if emtpy?
+          priorUnmatchedSegmentsStartIndex,
+          match.transcriptSegmentIndexes[0],
+        )
+        const unresolvedChunksBeforeMatch = subtitlesChunks.slice(
+          priorUnmatchedChunksStartIndex,
+          match.subtitlesChunkIndexes[0],
+        )
+        if (unresolvedSegmentsBeforeMatch.length || unresolvedChunksBeforeMatch.length) {
+          if (
+            unresolvedSegmentsBeforeMatch.length &&
+            unresolvedChunksBeforeMatch.length &&
+            (unresolvedSegmentsBeforeMatch.length === 1 || unresolvedChunksBeforeMatch.length === 1)
+          ) {
+            matches.push({
+              transcriptSegmentIndexes: unresolvedSegmentsBeforeMatch.map((s) => s.index),
+              subtitlesChunkIndexes: unresolvedChunksBeforeMatch.map((c) => c.index),
+            })
+          } else {
+            const unmatchedBefore = {
+              transcriptSegments: unresolvedSegmentsBeforeMatch,
+              subtitlesChunks: unresolvedChunksBeforeMatch,
+            }
+            unmatched.push(unmatchedBefore)
+          }
+        }
+
+        matches.push(match)
       }
     }
-
-    return matches
-  }, [] as SegmentChunkMatch[])
-
-  // fill in unresolved bits for later passes
-  let i = 0
-  for (const match of matches) {
-    // TODO: before first
-    const next = matches[i + 1] || null
-
-    const unresolvedSegmentsAfterMatch = transcriptSegments.slice(
-      match.transcriptSegmentIndexes[0] + 1,
-      next ? next.transcriptSegmentIndexes[0] : transcriptSegments.length,
-    )
-    const unresolvedChunksAfterMatch = subtitlesChunks.slice(
-      match.subtitlesChunkIndexes[0] + 1,
-      next ? next.subtitlesChunkIndexes[0] : subtitlesChunks.length,
-    )
-
-    if (unresolvedSegmentsAfterMatch.length || unresolvedChunksAfterMatch.length) {
-      match.unmatchedAfter = {
-        transcriptSegments: unresolvedSegmentsAfterMatch,
-        subtitlesChunks: unresolvedChunksAfterMatch,
-      }
-    }
-
-    i++
   }
 
-  return matches
+  const lastMatch: SegmentChunkMatch | null = matches[matches.length - 1] || null
+  const unprocessedSegmentsStartIndex = lastMatch
+    ? lastMatch.transcriptSegmentIndexes[lastMatch.transcriptSegmentIndexes.length - 1] + 1
+    : transcriptSegmentsStartIndex
+  const unprocessedChunksStartIndex = lastMatch
+    ? lastMatch.subtitlesChunkIndexes[lastMatch.subtitlesChunkIndexes.length - 1] + 1
+    : subtitlesChunksStartIndex
+  const unresolvedSegmentsAfterMatches = transcriptSegments.slice(unprocessedSegmentsStartIndex, transcriptSegmentsEnd)
+  const unresolvedChunksAfterMatches = subtitlesChunks.slice(unprocessedChunksStartIndex, subtitlesChunksEnd)
+  if (unresolvedSegmentsAfterMatches.length || unresolvedChunksAfterMatches.length) {
+    if (
+      unresolvedSegmentsAfterMatches.length &&
+      unresolvedChunksAfterMatches.length &&
+      (unresolvedSegmentsAfterMatches.length === 1 || unresolvedChunksAfterMatches.length === 1)
+    ) {
+      matches.push({
+        transcriptSegmentIndexes: unresolvedSegmentsAfterMatches.map((s) => s.index),
+        subtitlesChunkIndexes: unresolvedChunksAfterMatches.map((c) => c.index),
+      })
+    } else {
+      const unmatchedAfter = {
+        transcriptSegments: unresolvedSegmentsAfterMatches,
+        subtitlesChunks: unresolvedChunksAfterMatches,
+      }
+      unmatched.push(unmatchedAfter)
+    }
+  }
+
+  return {
+    matches,
+    unmatched,
+  }
 }
 
 function normalizeText(text: string) {
@@ -129,10 +269,11 @@ function normalizeText(text: string) {
 
 export function getTranscriptSegments(transcript: string, options: Options = defaultOptions) {
   const transcriptSegmentsMatches = transcript.matchAll(options.transcriptSegmenters)
-  const transcriptSegments = [...transcriptSegmentsMatches].map((match) => {
+  const transcriptSegments = [...transcriptSegmentsMatches].map((match, index) => {
     return {
       start: match.index as number,
       end: ((match.index as number) + match[0].length) as number,
+      index,
     }
   })
 
@@ -142,3 +283,10 @@ export function getTranscriptSegments(transcript: string, options: Options = def
 // first find relatively big/unique transcript chunks
 //   use them to find big extremely probable matches (starting from both ends?)
 // then between those, fill in less probable matches, trying different combinations/further segmentations?
+
+function findIndexBetween<T>(arr: T[], startIndex: number, end: number, predicate: (el: T) => boolean): number {
+  for (let i = startIndex; i < end; i++) {
+    if (predicate(arr[i])) return i
+  }
+  return -1
+}
