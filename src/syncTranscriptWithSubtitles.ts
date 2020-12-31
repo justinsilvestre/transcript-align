@@ -1,52 +1,12 @@
 import * as levenshtein from 'fast-levenshtein'
+import { analyzeTranscript, AnalyzedTranscript, TranscriptAtomIndex, TranscriptSegmentInput } from './analyzeTranscript'
 import { findIndexBetween } from './findIndexBetween'
 import { last } from './last'
-
-export type TranscriptSegment = {
-  index: number
-  text: string
-  translation: string
-  atoms: TranscriptAtom[]
-}
-
-type TranscriptSegmentInput = {
-  index: number
-  text: string
-  translation: string
-}
-
-class TranscriptAtom {
-  segmentIndex: number
-  segment: TranscriptSegment
-  relativeIndex: number
-  absoluteIndex: number
-  start: number
-  end: number
-  
-  constructor(segment: TranscriptSegment, index: number, relativeIndex: number, start: number, end: number) {
-    this.absoluteIndex = index
-    this.relativeIndex = relativeIndex
-    this.segment = segment
-    this.start = start
-    this.end = end
-    this.segmentIndex = segment.index
-  }
-
-  get text() {
-    return this.segment.text.slice(this.start, this.end)
-  }
-
-  get index(): TranscriptAtomIndex {
-    return [this.segmentIndex, this.relativeIndex]
-  }
-}
 
 type SubtitlesChunk = {
   text: string
   index: number
 }
-
-type TranscriptAtomIndex = [number, number]
 
 export type SegmentChunkMatch = {
   /** always at least one present */
@@ -61,14 +21,15 @@ export type Unmatched = {
   matched: false
 }
 
-type Options = {
+export type Options = {
   transcriptSegmenters: RegExp
   segmentationFirstPassAnchorLength: number
 }
 
 const NON_LETTERS_DIGITS_WHITESPACE_OR_END = /[\p{L}\p{N}]+[\s\p{L}\p{N}]*([^\p{L}\p{N}]+|$)/gu
 const NON_LETTERS_DIGITS = /[^\p{L}\p{N}]/gu
-const defaultOptions = {
+
+export const defaultOptions = {
   transcriptSegmenters: NON_LETTERS_DIGITS_WHITESPACE_OR_END,
   segmentationFirstPassAnchorLength: 15,
 }
@@ -85,7 +46,7 @@ export function syncTranscriptWithSubtitles(
     ...givenOptions,
   }
 
-  const analyzedTranscript = analyzeTranscript(transcriptInput)
+  const analyzedTranscript = analyzeTranscript(transcriptInput, options.transcriptSegmenters)
 
   // todo: clean up options--shouldnt be used everywhere now that segmentaiton is done outside
   const anchorMatches = getAnchorMatches(analyzedTranscript, subtitlesChunks, options)
@@ -318,76 +279,4 @@ function normalizeText(text: string) {
     .trim()
 }
 
-class AnalyzedTranscript {
-  segments: TranscriptSegment[]
-  atoms: TranscriptAtom[]
 
-  constructor(input: TranscriptSegmentInput[], segmenter: RegExp) {
-    let absoluteAtomIndex = 0
-    let segments: TranscriptSegment[] = []
-
-    const allAtoms = input.flatMap((segmentInput) => {
-      const segmentAtoms: TranscriptAtom[] = []
-      const segment: TranscriptSegment = {
-        atoms: segmentAtoms,
-        text: segmentInput.text,
-        index: segmentInput.index,
-        translation: segmentInput.translation,
-      }
-      segments.push(segment)
-
-      const segmentAtomsInitialization = [...segmentInput.text.matchAll(segmenter)].map((match, relativeIndex) => {
-        const currentAbsoluteIndex = absoluteAtomIndex
-        absoluteAtomIndex += 1
-        return new TranscriptAtom(segment, currentAbsoluteIndex, relativeIndex, match.index as number, ((match.index as number) + match[0].length) as number)
-      })
-
-      segmentAtoms.push(...segmentAtomsInitialization)
-      
-      return segmentAtoms
-    })
-
-    this.atoms = allAtoms
-    this.segments = segments
-  }
-
-  atomAt([segmentIndex, atomRelativeIndex]: TranscriptAtomIndex) {
-    const segment = this.segments[segmentIndex]
-    if (!segment) throw new Error(`Could not find segment at index ${segmentIndex} within ${this.segments.length} segments`)
-    return segment.atoms[atomRelativeIndex]
-  }
-  
-  toAbsoluteAtomIndex(atomIndex: TranscriptAtomIndex) {
-    return this.atomAt(atomIndex).absoluteIndex
-  }
-}
-
-
-export function analyzeTranscript(transcriptSegmentsInput: TranscriptSegmentInput[], options: Options = defaultOptions): AnalyzedTranscript {
-  return new AnalyzedTranscript(transcriptSegmentsInput, options.transcriptSegmenters)
-  
-  // let absoluteIndex = 0
-  // return transcriptSegmentsInput.flatMap((segment) => {
-  //   return [...segment.text.matchAll(options.transcriptSegmenters)].map((match, relativeIndex) => {
-  //     const currentAbsoluteIndex = absoluteIndex
-  //     absoluteIndex += 1
-  //     return new TranscriptAtom(segment, currentAbsoluteIndex, relativeIndex, match.index as number, ((match.index as number) + match[0].length) as number)
-  //   })
-  // })
-
-  // const transcriptSegmentsMatches = transcript.matchAll(options.transcriptSegmenters)
-  // const transcriptSegments = [...transcriptSegmentsMatches].map((match, index) => {
-  //   return {
-  //     // start: match.index as number,
-  //     // end: ((match.index as number) + match[0].length) as number,
-  //     index,
-  //     text: match[0],
-  //     translation: ''
-  //   }
-  // })
-
-  // return transcriptSegments
-}
-// first find relatively big/unique transcript chunks
-//   use them to find big extremely probable matches (starting from both ends?)
-// then between those, fill in less probable matches, trying different combinations/further segmentations?

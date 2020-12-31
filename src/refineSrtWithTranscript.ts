@@ -1,7 +1,7 @@
 import * as fs from 'fs'
 import { parseSync, stringifySync, NodeCue } from 'subtitle'
 import { findIndexBetween } from './findIndexBetween'
-import { syncTranscriptWithSubtitles, SegmentChunkMatch, Unmatched, TranscriptSegment, SyncedTranscriptAndSubtitles } from './syncTranscriptWithSubtitles'
+import { syncTranscriptWithSubtitles, SegmentChunkMatch, Unmatched, SyncedTranscriptAndSubtitles } from './syncTranscriptWithSubtitles'
 import { last } from './last'
 import { rashomon } from './rashomon'
 

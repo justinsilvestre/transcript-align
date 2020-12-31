@@ -1,6 +1,7 @@
 import { refineSrtWithTranscript } from "./refineSrtWithTranscript";
 import { rashomon, rashomonSrt } from './rashomon'
-import { analyzeTranscript, syncTranscriptWithSubtitles } from "./syncTranscriptWithSubtitles";
+import { syncTranscriptWithSubtitles } from "./syncTranscriptWithSubtitles";
+import { analyzeTranscript } from "./analyzeTranscript";
 import { parseSync } from "subtitle";
 import { readFileSync } from 'fs'
 import * as path from 'path'
