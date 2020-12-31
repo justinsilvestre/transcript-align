@@ -1,11 +1,14 @@
 import * as fs from 'fs'
 import { parseSync, stringifySync, NodeCue } from 'subtitle'
 import { findIndexBetween } from './findIndexBetween'
-import { getCuesForTranscript, SegmentChunkMatch, Unmatched } from './getCuesForTranscript'
+import { syncTranscriptWithSubtitles, SegmentChunkMatch, Unmatched, TranscriptSegment, SyncedTranscriptAndSubtitles } from './syncTranscriptWithSubtitles'
 import { last } from './last'
 import { rashomon } from './rashomon'
 
-export function refineSrtWithTranscript(srtText: string, transcript: string) {
+// const transcriptSegments = getCuesForTranscript(transcript, chunks)
+
+
+export function refineSrtWithTranscript(srtText: string, synced: SyncedTranscriptAndSubtitles) {
   // TODO: get rid of any overlaps
   const chunks = parseSync(srtText)
     .filter((x): x is NodeCue => x.type === 'cue')
@@ -14,10 +17,8 @@ export function refineSrtWithTranscript(srtText: string, transcript: string) {
       index: i,
       data: n.data,
     }))
-  // TODO: rename
-  const cues = getCuesForTranscript(transcript, chunks)
   // attach stray segments to next chunk
-  const withoutStraySegments: Array<SegmentChunkMatch | Unmatched> = attachStraySegments(cues.matches, cues.unmatched)
+  const withoutStraySegments: Array<SegmentChunkMatch | Unmatched> = attachStraySegments(synced)
 
   const newSrtText = stringifySync(
     withoutStraySegments.map((x) => ({
@@ -25,21 +26,43 @@ export function refineSrtWithTranscript(srtText: string, transcript: string) {
       data: {
         start: chunks[x.subtitlesChunkIndexes[0]].data.start,
         end: chunks[last(x.subtitlesChunkIndexes)].data.end,
-        text: x.transcriptSegmentIndexes
-          .map((i) => transcript.slice(cues.transcriptSegments[i].start, cues.transcriptSegments[i].end))
+        text: x.transcriptAtomIndexes
+          .map((i) => synced.analyzedTranscript.atomAt(i).text)
+          .join(''),
+      },
+    })),
+    { format: 'SRT' },
+  )
+  const translationSrtText =  stringifySync(
+    withoutStraySegments.map((x) => ({
+      type: 'cue',
+      data: {
+        start: chunks[x.subtitlesChunkIndexes[0]].data.start,
+        end: chunks[last(x.subtitlesChunkIndexes)].data.end,
+        text: x.transcriptAtomIndexes
+          .map((i) => {
+            // TODO: fill in
+            return ''
+            // synced.analyzedTranscript.atomAt(i).translation
+          })
           .join(''),
       },
     })),
     { format: 'SRT' },
   )
 
+
+  translationSrtText
+
   console.log({ writingTo: __dirname + '../out.srt' })
   fs.writeFileSync(__dirname + '/../out.srt', newSrtText, 'utf8')
+  fs.writeFileSync(__dirname + '/../out_translation.srt', translationSrtText, 'utf8')
 
   return withoutStraySegments
 }
 
-function attachStraySegments(matches: SegmentChunkMatch[], unmatched: Unmatched[]) {
+function attachStraySegments(synced: SyncedTranscriptAndSubtitles) {
+  const { matches, unmatched, analyzedTranscript } =synced
   const itemsWithSubtitlesChunks: Array<SegmentChunkMatch | Unmatched> = [
     ...matches.filter((m) => m.subtitlesChunkIndexes.length),
     ...unmatched.filter((m) => m.subtitlesChunkIndexes.length),
@@ -47,18 +70,18 @@ function attachStraySegments(matches: SegmentChunkMatch[], unmatched: Unmatched[
 
   const straySegmentsGroups: Array<SegmentChunkMatch | Unmatched> = unmatched
     .filter((m) => !m.subtitlesChunkIndexes.length)
-    .sort((a, b) => a.transcriptSegmentIndexes[0] - b.transcriptSegmentIndexes[0])
+    .sort((a, b) => analyzedTranscript.toAbsoluteAtomIndex(a.transcriptAtomIndexes[0]) - analyzedTranscript.toAbsoluteAtomIndex(b.transcriptAtomIndexes[0]))
 
   for (const straySegmentsGroup of straySegmentsGroups) {
-    const nextTranscriptSegmentIndex = last(straySegmentsGroup.transcriptSegmentIndexes) + 1
+    const nextTranscriptSegmentIndex = analyzedTranscript.toAbsoluteAtomIndex(last(straySegmentsGroup.transcriptAtomIndexes)) + 1
     // TODO: stragglers at end? start?
     const matchWithChunks = itemsWithSubtitlesChunks.find((x) =>
-      x.transcriptSegmentIndexes.includes(nextTranscriptSegmentIndex),
+      x.transcriptAtomIndexes.some(i => analyzedTranscript.toAbsoluteAtomIndex(i) === nextTranscriptSegmentIndex),
     )
     if (matchWithChunks) {
-      matchWithChunks.transcriptSegmentIndexes = [
-        ...straySegmentsGroup.transcriptSegmentIndexes,
-        ...matchWithChunks.transcriptSegmentIndexes,
+      matchWithChunks.transcriptAtomIndexes = [
+        ...straySegmentsGroup.transcriptAtomIndexes,
+        ...matchWithChunks.transcriptAtomIndexes,
       ]
     }
   }

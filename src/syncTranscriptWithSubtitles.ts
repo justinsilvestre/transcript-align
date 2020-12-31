@@ -2,20 +2,61 @@ import * as levenshtein from 'fast-levenshtein'
 import { findIndexBetween } from './findIndexBetween'
 import { last } from './last'
 
+export type TranscriptSegment = {
+  index: number
+  text: string
+  translation: string
+  atoms: TranscriptAtom[]
+}
+
+type TranscriptSegmentInput = {
+  index: number
+  text: string
+  translation: string
+}
+
+class TranscriptAtom {
+  segmentIndex: number
+  segment: TranscriptSegment
+  relativeIndex: number
+  absoluteIndex: number
+  start: number
+  end: number
+  
+  constructor(segment: TranscriptSegment, index: number, relativeIndex: number, start: number, end: number) {
+    this.absoluteIndex = index
+    this.relativeIndex = relativeIndex
+    this.segment = segment
+    this.start = start
+    this.end = end
+    this.segmentIndex = segment.index
+  }
+
+  get text() {
+    return this.segment.text.slice(this.start, this.end)
+  }
+
+  get index(): TranscriptAtomIndex {
+    return [this.segmentIndex, this.relativeIndex]
+  }
+}
+
 type SubtitlesChunk = {
   text: string
   index: number
 }
 
+type TranscriptAtomIndex = [number, number]
+
 export type SegmentChunkMatch = {
   /** always at least one present */
-  transcriptSegmentIndexes: number[]
+  transcriptAtomIndexes: TranscriptAtomIndex[]
   /** always at least one present */
   subtitlesChunkIndexes: number[]
   matched: true
 }
 export type Unmatched = {
-  transcriptSegmentIndexes: number[]
+  transcriptAtomIndexes: TranscriptAtomIndex[]
   subtitlesChunkIndexes: number[]
   matched: false
 }
@@ -32,8 +73,10 @@ const defaultOptions = {
   segmentationFirstPassAnchorLength: 15,
 }
 
-export function getCuesForTranscript(
-  transcript: string,
+export type SyncedTranscriptAndSubtitles = ReturnType<typeof syncTranscriptWithSubtitles>
+
+export function syncTranscriptWithSubtitles(
+  transcriptInput: TranscriptSegmentInput[],
   subtitlesChunks: SubtitlesChunk[],
   givenOptions: Options = defaultOptions,
 ) {
@@ -41,42 +84,42 @@ export function getCuesForTranscript(
     ...defaultOptions,
     ...givenOptions,
   }
-  const transcriptSegments = getTranscriptSegments(transcript, options)
-  const anchorMatches = getAnchorMatches(transcriptSegments, transcript, subtitlesChunks, options)
 
-  const secondPass = continueMatching(anchorMatches.matches, transcriptSegments, transcript, subtitlesChunks, 10, 2)
-  const thirdPass = continueMatching(secondPass.matches, transcriptSegments, transcript, subtitlesChunks, 9, 2)
-  const fourthPass = continueMatching(thirdPass.matches, transcriptSegments, transcript, subtitlesChunks, 8, 2)
-  const fifthPass = continueMatching(fourthPass.matches, transcriptSegments, transcript, subtitlesChunks, 7, 2)
-  const sixthPass = continueMatching(fifthPass.matches, transcriptSegments, transcript, subtitlesChunks, 6, 2)
-  const seventhPass = continueMatching(sixthPass.matches, transcriptSegments, transcript, subtitlesChunks, 5, 2)
-  const eighthPass = continueMatching(seventhPass.matches, transcriptSegments, transcript, subtitlesChunks, 4, 2)
-  const ninthPass = continueMatching(eighthPass.matches, transcriptSegments, transcript, subtitlesChunks, 3, 2)
+  const analyzedTranscript = analyzeTranscript(transcriptInput)
 
-  const tenthPass = continueMatching(ninthPass.matches, transcriptSegments, transcript, subtitlesChunks, 5, 3)
-  const eleventhPass = continueMatching(tenthPass.matches, transcriptSegments, transcript, subtitlesChunks, 5, 4)
-  const twelfthPass = continueMatching(eleventhPass.matches, transcriptSegments, transcript, subtitlesChunks, 5, 5)
-  const thirteenthPass = continueMatching(twelfthPass.matches, transcriptSegments, transcript, subtitlesChunks, 5, 6)
+  // todo: clean up options--shouldnt be used everywhere now that segmentaiton is done outside
+  const anchorMatches = getAnchorMatches(analyzedTranscript, subtitlesChunks, options)
 
-  const final = thirteenthPass
+  const minMatchLength = 10
+  let penultimate = continueMatching(anchorMatches.matches, analyzedTranscript, subtitlesChunks, 10, 2)
+  for (let i = 10; i >= minMatchLength; i--) {
+    penultimate = continueMatching(penultimate.matches, analyzedTranscript, subtitlesChunks, i, 2)
+  }
+
+
+  const levenshteinThreshold = 10
+  let final = continueMatching(penultimate.matches, analyzedTranscript, subtitlesChunks, 5, 3)
+  for (let i = 3; i < levenshteinThreshold; i++) {
+    final = continueMatching(final.matches, analyzedTranscript, subtitlesChunks, 5, i)
+
+  }
 
   return {
     ...final,
-    transcriptSegments
+    analyzedTranscript
   }
 }
 
 export function getAnchorMatches(
-  transcriptSegments: { start: number; end: number; index: number }[],
-  transcript: string,
+  transcript: AnalyzedTranscript,
   subtitlesChunks: SubtitlesChunk[],
   options: { transcriptSegmenters: RegExp; segmentationFirstPassAnchorLength: number } = defaultOptions,
 ) {
-  return getProbableMatches(transcriptSegments, transcript, subtitlesChunks, {
+  return getProbableMatches(transcript, subtitlesChunks, {
     minMatchLength: options.segmentationFirstPassAnchorLength,
     levenshteinThreshold: 2,
-    transcriptSegmentsStartIndex: 0,
-    transcriptSegmentsEnd: transcriptSegments.length,
+    transcriptAtomsStartIndex: 0,
+    transcriptAtomsEnd: transcript.atoms.length,
     subtitlesChunksStartIndex: 0,
     subtitlesChunksEnd: subtitlesChunks.length,
   })
@@ -84,8 +127,7 @@ export function getAnchorMatches(
 
 function continueMatching(
   prevMatches: SegmentChunkMatch[],
-  transcriptSegments: { start: number; end: number; index: number }[],
-  transcript: string,
+  analyzedTranscript: AnalyzedTranscript,
   subtitlesChunks: SubtitlesChunk[],
   minMatchLength: number,
   levenshteinThreshold: number,
@@ -95,13 +137,13 @@ function continueMatching(
   let i = 0
   for (const match of prevMatches) {
     const previousMatch: SegmentChunkMatch | null = prevMatches[i - 1] || null
-    const before = getProbableMatches(transcriptSegments, transcript, subtitlesChunks, {
+    const before = getProbableMatches(analyzedTranscript, subtitlesChunks, {
       minMatchLength,
       levenshteinThreshold,
-      transcriptSegmentsStartIndex: previousMatch
-        ? last(previousMatch.transcriptSegmentIndexes) + 1
+      transcriptAtomsStartIndex: previousMatch
+        ? last(previousMatch.transcriptAtomIndexes.map(i => analyzedTranscript.toAbsoluteAtomIndex(i))) + 1
         : 0,
-      transcriptSegmentsEnd: match.transcriptSegmentIndexes[0],
+      transcriptAtomsEnd: match.transcriptAtomIndexes.map(i => analyzedTranscript.toAbsoluteAtomIndex(i))[0],
       subtitlesChunksStartIndex: previousMatch
         ? last(previousMatch.subtitlesChunkIndexes) + 1
         : 0,
@@ -115,11 +157,13 @@ function continueMatching(
   }
 
   const lastMatch = last(prevMatches)
-  const unresolvedAtEnd = getProbableMatches(transcriptSegments, transcript, subtitlesChunks, {
+  const unresolvedAtEnd = getProbableMatches(analyzedTranscript, subtitlesChunks, {
         minMatchLength,
         levenshteinThreshold,
-        transcriptSegmentsStartIndex: last(lastMatch.transcriptSegmentIndexes) + 1,
-        transcriptSegmentsEnd: lastMatch ? lastMatch.transcriptSegmentIndexes[0] : transcriptSegments.length,
+        transcriptAtomsStartIndex: last(lastMatch.transcriptAtomIndexes.map(i => analyzedTranscript.toAbsoluteAtomIndex(i))) + 1,
+        transcriptAtomsEnd: lastMatch
+          ? analyzedTranscript.toAbsoluteAtomIndex(lastMatch.transcriptAtomIndexes[0])
+          : analyzedTranscript.atoms.length,
         subtitlesChunksStartIndex: last(lastMatch.subtitlesChunkIndexes)+ 1,
         subtitlesChunksEnd: lastMatch ? lastMatch.subtitlesChunkIndexes[0] : subtitlesChunks.length,
       })
@@ -132,15 +176,15 @@ function continueMatching(
 type GetProbableMatchesOptions = {
   minMatchLength: number
   levenshteinThreshold: number
-  transcriptSegmentsStartIndex: number
-  transcriptSegmentsEnd: number
+  transcriptAtomsStartIndex: number
+  transcriptAtomsEnd: number
   subtitlesChunksStartIndex: number
   subtitlesChunksEnd: number
 }
 
+
 export function getProbableMatches(
-  transcriptSegments: { start: number; end: number; index: number }[],
-  transcript: string,
+  transcript: AnalyzedTranscript,
   subtitlesChunks: SubtitlesChunk[],
   options: GetProbableMatchesOptions,
 ) {
@@ -148,8 +192,8 @@ export function getProbableMatches(
   const {
     minMatchLength,
     levenshteinThreshold,
-    transcriptSegmentsStartIndex,
-    transcriptSegmentsEnd,
+    transcriptAtomsStartIndex,
+    transcriptAtomsEnd,
     subtitlesChunksStartIndex,
     subtitlesChunksEnd,
   } = options
@@ -158,9 +202,8 @@ export function getProbableMatches(
 
   let searchStartIndex = subtitlesChunksStartIndex
 
-  for (let index = transcriptSegmentsStartIndex; index < transcriptSegmentsEnd; index++) {
-    const { start, end } = transcriptSegments[index]
-    const segment = transcript.slice(start, end)
+  for (let index = transcriptAtomsStartIndex; index < transcriptAtomsEnd; index++) {
+    const { text: segment } = transcript.atoms[index]
 
     const normalizedSegment = normalizeText(segment)
     if (normalizedSegment.length >= minMatchLength) {
@@ -182,21 +225,21 @@ export function getProbableMatches(
         searchStartIndex = subtitlesChunkMatchIndex + 1
         const previousMatch = matches[matches.length - 1]
         const match: SegmentChunkMatch = {
-          transcriptSegmentIndexes: [index],
+          transcriptAtomIndexes: [transcript.atoms[index].index],
           subtitlesChunkIndexes: [subtitlesChunkMatchIndex],
           matched: true,
         }
 
         const priorUnmatchedSegmentsStartIndex = previousMatch
-          ? last(previousMatch.transcriptSegmentIndexes) + 1
-          : transcriptSegmentsStartIndex
+          ? transcript.toAbsoluteAtomIndex(last(previousMatch.transcriptAtomIndexes)) + 1
+          : transcriptAtomsStartIndex
         const priorUnmatchedChunksStartIndex = previousMatch
           ? last(previousMatch.subtitlesChunkIndexes) + 1
           : subtitlesChunksStartIndex
-        const unresolvedSegmentsBeforeMatch = transcriptSegments.slice(
+        const unresolvedSegmentsBeforeMatch = transcript.atoms.slice(
           // todo: what if emtpy?
           priorUnmatchedSegmentsStartIndex,
-          match.transcriptSegmentIndexes[0],
+          transcript.toAbsoluteAtomIndex(match.transcriptAtomIndexes[0]),
         )
         const unresolvedChunksBeforeMatch = subtitlesChunks.slice(
           priorUnmatchedChunksStartIndex,
@@ -209,7 +252,7 @@ export function getProbableMatches(
             (unresolvedSegmentsBeforeMatch.length === 1 || unresolvedChunksBeforeMatch.length === 1)
           ) {
             const newMatch: SegmentChunkMatch = {
-              transcriptSegmentIndexes: unresolvedSegmentsBeforeMatch.map((s) => s.index),
+              transcriptAtomIndexes: unresolvedSegmentsBeforeMatch.map((s) => s.index),
               subtitlesChunkIndexes: unresolvedChunksBeforeMatch.map((c) => c.index),
               matched: true,
             }
@@ -217,7 +260,7 @@ export function getProbableMatches(
             matches.push(newMatch)
           } else {
             const unmatchedBefore: Unmatched = {
-              transcriptSegmentIndexes: unresolvedSegmentsBeforeMatch.map((s) => s.index),
+              transcriptAtomIndexes: unresolvedSegmentsBeforeMatch.map((s) => s.index),
               subtitlesChunkIndexes: unresolvedChunksBeforeMatch.map((c) => c.index),
               matched: false,
             }
@@ -234,12 +277,12 @@ export function getProbableMatches(
 
   const lastMatch: SegmentChunkMatch | null = last(matches) || null
   const unprocessedSegmentsStartIndex = lastMatch
-    ? last(lastMatch.transcriptSegmentIndexes) + 1
-    : transcriptSegmentsStartIndex
+    ? transcript.toAbsoluteAtomIndex(last(lastMatch.transcriptAtomIndexes)) + 1
+    : transcriptAtomsStartIndex
   const unprocessedChunksStartIndex = lastMatch
     ? last(lastMatch.subtitlesChunkIndexes) + 1
     : subtitlesChunksStartIndex
-  const unresolvedSegmentsAfterMatches = transcriptSegments.slice(unprocessedSegmentsStartIndex, transcriptSegmentsEnd)
+  const unresolvedSegmentsAfterMatches = transcript.atoms.slice(unprocessedSegmentsStartIndex, transcriptAtomsEnd)
   const unresolvedChunksAfterMatches = subtitlesChunks.slice(unprocessedChunksStartIndex, subtitlesChunksEnd)
   if (unresolvedSegmentsAfterMatches.length || unresolvedChunksAfterMatches.length) {
     if (
@@ -248,14 +291,14 @@ export function getProbableMatches(
       (unresolvedSegmentsAfterMatches.length === 1 || unresolvedChunksAfterMatches.length === 1)
     ) {
       matches.push({
-        transcriptSegmentIndexes: unresolvedSegmentsAfterMatches.map((s) => s.index),
+        transcriptAtomIndexes: unresolvedSegmentsAfterMatches.map((s) => s.index),
         subtitlesChunkIndexes: unresolvedChunksAfterMatches.map((c) => c.index),
         matched: true,
       })
     } else {
       const unmatchedAfter: Unmatched = {
         matched: false,
-        transcriptSegmentIndexes: unresolvedSegmentsAfterMatches.map((s) => s.index),
+        transcriptAtomIndexes: unresolvedSegmentsAfterMatches.map((s) => s.index),
         subtitlesChunkIndexes: unresolvedChunksAfterMatches.map((s) => s.index),
       }
       unmatched.push(unmatchedAfter)
@@ -275,17 +318,75 @@ function normalizeText(text: string) {
     .trim()
 }
 
-export function getTranscriptSegments(transcript: string, options: Options = defaultOptions) {
-  const transcriptSegmentsMatches = transcript.matchAll(options.transcriptSegmenters)
-  const transcriptSegments = [...transcriptSegmentsMatches].map((match, index) => {
-    return {
-      start: match.index as number,
-      end: ((match.index as number) + match[0].length) as number,
-      index,
-    }
-  })
+class AnalyzedTranscript {
+  segments: TranscriptSegment[]
+  atoms: TranscriptAtom[]
 
-  return transcriptSegments
+  constructor(input: TranscriptSegmentInput[], segmenter: RegExp) {
+    let absoluteAtomIndex = 0
+    let segments: TranscriptSegment[] = []
+
+    const allAtoms = input.flatMap((segmentInput) => {
+      const segmentAtoms: TranscriptAtom[] = []
+      const segment: TranscriptSegment = {
+        atoms: segmentAtoms,
+        text: segmentInput.text,
+        index: segmentInput.index,
+        translation: segmentInput.translation,
+      }
+      segments.push(segment)
+
+      const segmentAtomsInitialization = [...segmentInput.text.matchAll(segmenter)].map((match, relativeIndex) => {
+        const currentAbsoluteIndex = absoluteAtomIndex
+        absoluteAtomIndex += 1
+        return new TranscriptAtom(segment, currentAbsoluteIndex, relativeIndex, match.index as number, ((match.index as number) + match[0].length) as number)
+      })
+
+      segmentAtoms.push(...segmentAtomsInitialization)
+      
+      return segmentAtoms
+    })
+
+    this.atoms = allAtoms
+    this.segments = segments
+  }
+
+  atomAt([segmentIndex, atomRelativeIndex]: TranscriptAtomIndex) {
+    const segment = this.segments[segmentIndex]
+    if (!segment) throw new Error(`Could not find segment at index ${segmentIndex} within ${this.segments.length} segments`)
+    return segment.atoms[atomRelativeIndex]
+  }
+  
+  toAbsoluteAtomIndex(atomIndex: TranscriptAtomIndex) {
+    return this.atomAt(atomIndex).absoluteIndex
+  }
+}
+
+
+export function analyzeTranscript(transcriptSegmentsInput: TranscriptSegmentInput[], options: Options = defaultOptions): AnalyzedTranscript {
+  return new AnalyzedTranscript(transcriptSegmentsInput, options.transcriptSegmenters)
+  
+  // let absoluteIndex = 0
+  // return transcriptSegmentsInput.flatMap((segment) => {
+  //   return [...segment.text.matchAll(options.transcriptSegmenters)].map((match, relativeIndex) => {
+  //     const currentAbsoluteIndex = absoluteIndex
+  //     absoluteIndex += 1
+  //     return new TranscriptAtom(segment, currentAbsoluteIndex, relativeIndex, match.index as number, ((match.index as number) + match[0].length) as number)
+  //   })
+  // })
+
+  // const transcriptSegmentsMatches = transcript.matchAll(options.transcriptSegmenters)
+  // const transcriptSegments = [...transcriptSegmentsMatches].map((match, index) => {
+  //   return {
+  //     // start: match.index as number,
+  //     // end: ((match.index as number) + match[0].length) as number,
+  //     index,
+  //     text: match[0],
+  //     translation: ''
+  //   }
+  // })
+
+  // return transcriptSegments
 }
 // first find relatively big/unique transcript chunks
 //   use them to find big extremely probable matches (starting from both ends?)
