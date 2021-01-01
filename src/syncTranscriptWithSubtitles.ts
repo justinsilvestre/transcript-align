@@ -2,6 +2,7 @@ import * as levenshtein from 'fast-levenshtein'
 import { analyzeTranscript, AnalyzedTranscript, TranscriptAtomIndex, TranscriptSegmentInput } from './analyzeTranscript'
 import { findIndexBetween } from './findIndexBetween'
 import { last } from './last'
+import { normalizeText } from './normalizeText'
 
 type SubtitlesChunk = {
   text: string
@@ -27,7 +28,7 @@ export type Options = {
 }
 
 const NON_LETTERS_DIGITS_WHITESPACE_OR_END = /[\p{L}\p{N}]+[\s\p{L}\p{N}]*([^\p{L}\p{N}]+|$)/gu
-const NON_LETTERS_DIGITS = /[^\p{L}\p{N}]/gu
+export const NON_LETTERS_DIGITS = /[^\p{L}\p{N}]/gu
 
 export const defaultOptions = {
   transcriptSegmenters: NON_LETTERS_DIGITS_WHITESPACE_OR_END,
@@ -270,13 +271,6 @@ export function getProbableMatches(
     matches,
     unmatched,
   }
-}
-
-function normalizeText(text: string) {
-  return text
-    .replace(NON_LETTERS_DIGITS, '')
-    .replace(/[\s\n]+/, ' ')
-    .trim()
 }
 
 
