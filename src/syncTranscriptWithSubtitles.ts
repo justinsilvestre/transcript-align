@@ -1,276 +1,250 @@
-import * as levenshtein from 'fast-levenshtein'
-import { analyzeTranscript, AnalyzedTranscript, TranscriptAtomIndex, TranscriptSegmentInput } from './analyzeTranscript'
+import * as lev from 'fast-levenshtein'
+import { TranscriptSegmentInput, AnalyzedTranscript } from './analyzeTranscript'
 import { findIndexBetween } from './findIndexBetween'
 import { last } from './last'
 import { normalizeText } from './normalizeText'
 
-type SubtitlesChunk = {
+export const NON_LETTERS_DIGITS = /[^\p{L}\p{N}]/gu
+
+// TODO: try finding matches by combining bits to fix cases like:
+// NoMatchesFoundWithinParameters 6,12    subs: --Pagkaalis nila Adan at Eva sa hardin ng Eden nagkaroon sila ng maraming anak
+// --Ang panganay nilang si cain ay naging magsasaka at ang ikalawang anak na si Abel ay naging tagapag-alaga
+// --Hayop
+// trscpt: --Pagkaalis nina Adan at Eva sa hardin ng Eden, 
+// --nagkaroon sila ng maraming anak.
+// --Ang panganay nilang si Cain ay naging magsasaka, 
+// --at ang ikalawang anak na si Abel ay naging tagapag-
+// --alaga ng hayop.
+
+export type SearchResolutionItem = SearchDeadEnd | MatchGroup
+
+type SearchDeadEnd = {
+  type: 'SearchDeadEnd'
+  reason: 'NoPotentialMatchesLeft' | 'NoMatchesFoundWithinParameters'
+  params: SearchParams
+  items: ChunkAtomCorrespondence
+}
+function getSearchDeadEnd(params: SearchParams, items: ChunkAtomCorrespondence): SearchDeadEnd[] {
+  if (!items.subtitlesChunkIndexes.length && !items.transcriptAtomIndexes.length) return []
+  if (!items.subtitlesChunkIndexes.length || !items.transcriptAtomIndexes.length) return [{
+    type: 'SearchDeadEnd',
+    params,
+    items,
+    reason: 'NoPotentialMatchesLeft',
+  }]
+
+  return [
+    {
+      type: 'SearchDeadEnd',
+      params,
+      items,
+      reason: 'NoMatchesFoundWithinParameters'
+    },
+  ]
+}
+
+type MatchGroup = {
+  type: 'MatchGroup'
+  params: SearchParams
+  items: ChunkAtomCorrespondence
+}
+
+type ChunkAtomCorrespondence = {
+  subtitlesChunkIndexes: number[]
+  transcriptAtomIndexes: number[]
+}
+
+export function getMatchSearchArea(
+  subtitlesChunkIndexes: number[],
+  transcriptAtomIndexes: number[],
+): ChunkAtomCorrespondence {
+  return { subtitlesChunkIndexes, transcriptAtomIndexes }
+}
+
+export type SubtitlesChunk = {
   text: string
   index: number
 }
 
-export type SegmentChunkMatch = {
-  /** always at least one present */
-  transcriptAtomIndexes: TranscriptAtomIndex[]
-  /** always at least one present */
-  subtitlesChunkIndexes: number[]
-  matched: true
-}
-export type Unmatched = {
-  transcriptAtomIndexes: TranscriptAtomIndex[]
-  subtitlesChunkIndexes: number[]
-  matched: false
-}
-
-export type Options = {
-  transcriptSegmenters: RegExp
-  segmentationFirstPassAnchorLength: number
-}
-
 const NON_LETTERS_DIGITS_WHITESPACE_OR_END = /[\p{L}\p{N}]+[\s\p{L}\p{N}]*([^\p{L}\p{N}]+|$)/gu
-export const NON_LETTERS_DIGITS = /[^\p{L}\p{N}]/gu
 
-export const defaultOptions = {
-  transcriptSegmenters: NON_LETTERS_DIGITS_WHITESPACE_OR_END,
-  segmentationFirstPassAnchorLength: 15,
+export const defaultTranscriptSegmenter = NON_LETTERS_DIGITS_WHITESPACE_OR_END
+
+export type SyncResult = {
+  analyzedTranscript: AnalyzedTranscript
+  matches: SearchResolutionItem[]
 }
-
-export type SyncedTranscriptAndSubtitles = ReturnType<typeof syncTranscriptWithSubtitles>
 
 export function syncTranscriptWithSubtitles(
   transcriptInput: TranscriptSegmentInput[],
   subtitlesChunks: SubtitlesChunk[],
-  givenOptions: Options = defaultOptions,
-) {
-  const options = {
-    ...defaultOptions,
-    ...givenOptions,
-  }
+): SyncResult {
+  const analyzedTranscript = analyzeTranscript(transcriptInput, defaultTranscriptSegmenter)
 
-  const analyzedTranscript = analyzeTranscript(transcriptInput, options.transcriptSegmenters)
+  const initialSearchArea = getMatchSearchArea(
+    subtitlesChunks.map((c) => c.index),
+    analyzedTranscript.atoms.map((a) => a.absoluteIndex),
+  )
 
-  // todo: clean up options--shouldnt be used everywhere now that segmentaiton is done outside
-  const anchorMatches = getAnchorMatches(analyzedTranscript, subtitlesChunks, options)
+  // TODO: the longer the match query items, the bigger the threshold should be
+  const searched = findMatches(initialSearchArea, 0, {
+    subtitlesChunks,
+    transcript: analyzedTranscript,
+    searchParamsProgression: [
+      [2, 15],
+      [2, 14],
+      [2, 13],
+      [2, 12],
+      [2, 11],
+      [2, 10],
+      [2, 9],
+      [2, 8],
+        ...[...Array(25).keys()].map(k => (30 + 15) - k).map((n) => {
+        return [(2/5) * n, n] as [number, number]
+      }),
+      [2, 7],
+      [2, 6],
+      [2, 5],
+      [2, 4],
+      [2, 3],
+      [2, 5], // TODO: clean up
+      [4, 6],
+      [5, 8],
+      [6, 12],
 
-  const minMatchLength = 10
-  let penultimate = continueMatching(anchorMatches.matches, analyzedTranscript, subtitlesChunks, 10, 2)
-  for (let i = 10; i >= minMatchLength; i--) {
-    penultimate = continueMatching(penultimate.matches, analyzedTranscript, subtitlesChunks, i, 2)
-  }
-
-
-  const levenshteinThreshold = 10
-  let final = continueMatching(penultimate.matches, analyzedTranscript, subtitlesChunks, 5, 3)
-  for (let i = 3; i < levenshteinThreshold; i++) {
-    final = continueMatching(final.matches, analyzedTranscript, subtitlesChunks, 5, i)
-
-  }
+    ],
+  })
 
   return {
-    ...final,
-    analyzedTranscript
+    analyzedTranscript,
+    matches: searched,
   }
 }
 
-export function getAnchorMatches(
-  transcript: AnalyzedTranscript,
-  subtitlesChunks: SubtitlesChunk[],
-  options: { transcriptSegmenters: RegExp; segmentationFirstPassAnchorLength: number } = defaultOptions,
-) {
-  return getProbableMatches(transcript, subtitlesChunks, {
-    minMatchLength: options.segmentationFirstPassAnchorLength,
-    levenshteinThreshold: 2,
-    transcriptAtomsStartIndex: 0,
-    transcriptAtomsEnd: transcript.atoms.length,
-    subtitlesChunksStartIndex: 0,
-    subtitlesChunksEnd: subtitlesChunks.length,
-  })
+export function analyzeTranscript(
+  transcriptSegmentsInput: TranscriptSegmentInput[],
+  transcriptSegmenter: RegExp,
+): AnalyzedTranscript {
+  return new AnalyzedTranscript(transcriptSegmentsInput, transcriptSegmenter)
 }
 
-function continueMatching(
-  prevMatches: SegmentChunkMatch[],
-  analyzedTranscript: AnalyzedTranscript,
-  subtitlesChunks: SubtitlesChunk[],
-  minMatchLength: number,
-  levenshteinThreshold: number,
-) {
-  const matches: SegmentChunkMatch[] = []
-  const unmatched: Unmatched[] = []
-  let i = 0
-  for (const match of prevMatches) {
-    const previousMatch: SegmentChunkMatch | null = prevMatches[i - 1] || null
-    const before = getProbableMatches(analyzedTranscript, subtitlesChunks, {
-      minMatchLength,
-      levenshteinThreshold,
-      transcriptAtomsStartIndex: previousMatch
-        ? last(previousMatch.transcriptAtomIndexes.map(i => analyzedTranscript.toAbsoluteAtomIndex(i))) + 1
-        : 0,
-      transcriptAtomsEnd: match.transcriptAtomIndexes.map(i => analyzedTranscript.toAbsoluteAtomIndex(i))[0],
-      subtitlesChunksStartIndex: previousMatch
-        ? last(previousMatch.subtitlesChunkIndexes) + 1
-        : 0,
-      subtitlesChunksEnd: match.subtitlesChunkIndexes[0],
-    })
+type FindMatchesOptions = {
+  searchParamsProgression: SearchParams[]
+  transcript: AnalyzedTranscript
+  subtitlesChunks: SubtitlesChunk[]
+}
+type SearchParams = [LevenshteinThreshold, MinMatchLength]
+type LevenshteinThreshold = number
+type MinMatchLength = number
 
-    matches.push(...(before?.matches || []), match)
-    unmatched.push(...(before?.unmatched || []))
+export function findMatches(
+  searchArea: ChunkAtomCorrespondence,
+  completedSearchPasses: number,
+  options: FindMatchesOptions,
+): SearchResolutionItem[] {
+  const searchParams: SearchParams | null = options.searchParamsProgression[completedSearchPasses]
 
-    i++
+  if (!searchArea) return []
+  if (!searchArea.subtitlesChunkIndexes.length && !searchArea.transcriptAtomIndexes.length) {
+    return []
+  } else if (!searchArea.subtitlesChunkIndexes.length || !searchArea.transcriptAtomIndexes.length) {
+    return getSearchDeadEnd(searchParams, searchArea)
   }
 
-  const lastMatch = last(prevMatches)
-  const unresolvedAtEnd = getProbableMatches(analyzedTranscript, subtitlesChunks, {
-        minMatchLength,
-        levenshteinThreshold,
-        transcriptAtomsStartIndex: last(lastMatch.transcriptAtomIndexes.map(i => analyzedTranscript.toAbsoluteAtomIndex(i))) + 1,
-        transcriptAtomsEnd: lastMatch
-          ? analyzedTranscript.toAbsoluteAtomIndex(lastMatch.transcriptAtomIndexes[0])
-          : analyzedTranscript.atoms.length,
-        subtitlesChunksStartIndex: last(lastMatch.subtitlesChunkIndexes)+ 1,
-        subtitlesChunksEnd: lastMatch ? lastMatch.subtitlesChunkIndexes[0] : subtitlesChunks.length,
-      })
-  matches.push(...unresolvedAtEnd.matches)
-  unmatched.push(...unresolvedAtEnd.unmatched)
+  // TODO: consider this instead of manually making sure searchRound param is valid
+  // if (!searchParams) return getSearchDeadEnd(searchParams, items)
+  // return [{
+  //   type: 'SearchDeadEnd', items: searchArea, params: searchParams
+  // }]
 
-  return { matches, unmatched }
-}
+  const [levenshteinThreshold, minMatchLength] = searchParams
+  const allChunks = options.subtitlesChunks
+  const allAtoms = options.transcript.atoms
 
-type GetProbableMatchesOptions = {
-  minMatchLength: number
-  levenshteinThreshold: number
-  transcriptAtomsStartIndex: number
-  transcriptAtomsEnd: number
-  subtitlesChunksStartIndex: number
-  subtitlesChunksEnd: number
-}
+  // find matches
+  const matches: SearchResolutionItem[] = []
+  for (const subtitlesChunkIndex of searchArea.subtitlesChunkIndexes) {
+    const lastMatchInSearchGroup: SearchResolutionItem | null = last(matches) || null
+    const transcriptSearchStart = lastMatchInSearchGroup
+      ? last(lastMatchInSearchGroup.items.transcriptAtomIndexes) + 1
+      : searchArea.transcriptAtomIndexes[0]
 
+    const normalizedChunkText = normalizeText(options.subtitlesChunks[subtitlesChunkIndex].text)
 
-export function getProbableMatches(
-  transcript: AnalyzedTranscript,
-  subtitlesChunks: SubtitlesChunk[],
-  options: GetProbableMatchesOptions,
-) {
-  let first: SegmentChunkMatch | Unmatched | null = null
-  const {
-    minMatchLength,
-    levenshteinThreshold,
-    transcriptAtomsStartIndex,
-    transcriptAtomsEnd,
-    subtitlesChunksStartIndex,
-    subtitlesChunksEnd,
-  } = options
-  const matches: SegmentChunkMatch[] = []
-  const unmatched: Unmatched[] = []
+    // TODO: is something like this necessary?
+    // const transcriptSearchStartIndexIsWithinBounds = transcriptSearchStart < last(searchArea.transcriptAtomIndexes)
+    // if (!transcriptSearchStartIndexIsWithinBounds) continue
 
-  let searchStartIndex = subtitlesChunksStartIndex
+    if (normalizedChunkText.length >= minMatchLength) {
+      const transcriptAtomMatchIndex = findIndexBetween(
+        allAtoms,
+        transcriptSearchStart,
+        last(searchArea.transcriptAtomIndexes) + 1,
+        (atom) => {
+          const normalizedAtomText = normalizeText(atom.text)
 
-  for (let index = transcriptAtomsStartIndex; index < transcriptAtomsEnd; index++) {
-    const { text: segment } = transcript.atoms[index]
-
-    const normalizedSegment = normalizeText(segment)
-    if (normalizedSegment.length >= minMatchLength) {
-      const subtitlesChunkMatchIndex = findIndexBetween(
-        subtitlesChunks,
-        searchStartIndex,
-        subtitlesChunksEnd,
-        ({ text }) => {
-          const normalizedSubtitlesChunkSegment = normalizeText(text)
-          const distance = levenshtein.get(normalizedSegment, normalizedSubtitlesChunkSegment)
-          return distance <= levenshteinThreshold
+          return lev.get(normalizedChunkText, normalizedAtomText) <= levenshteinThreshold
         },
       )
 
-      const matchFound = subtitlesChunkMatchIndex !== -1
+      const matchWasFound = transcriptAtomMatchIndex !== -1
+      if (matchWasFound) {
+        const priorUnmatchedSubtitlesChunkIndexesStart = lastMatchInSearchGroup
+          ? last(lastMatchInSearchGroup.items.subtitlesChunkIndexes) + 1
+          : searchArea.subtitlesChunkIndexes[0]
+        const priorUnmatchedSubtitlesChunkIndexes = allChunks
+          .slice(priorUnmatchedSubtitlesChunkIndexesStart, subtitlesChunkIndex)
+          .map((s) => s.index)
 
-      if (matchFound) {
-        // immediately flag the matched subtitleschunks as already processed
-        searchStartIndex = subtitlesChunkMatchIndex + 1
-        const previousMatch = matches[matches.length - 1]
-        const match: SegmentChunkMatch = {
-          transcriptAtomIndexes: [transcript.atoms[index].index],
-          subtitlesChunkIndexes: [subtitlesChunkMatchIndex],
-          matched: true,
-        }
+        const priorUnmatchedTranscriptAtomIndexes = allAtoms
+          .slice(transcriptSearchStart, transcriptAtomMatchIndex)
+          .map((s) => s.absoluteIndex)
 
-        const priorUnmatchedSegmentsStartIndex = previousMatch
-          ? transcript.toAbsoluteAtomIndex(last(previousMatch.transcriptAtomIndexes)) + 1
-          : transcriptAtomsStartIndex
-        const priorUnmatchedChunksStartIndex = previousMatch
-          ? last(previousMatch.subtitlesChunkIndexes) + 1
-          : subtitlesChunksStartIndex
-        const unresolvedSegmentsBeforeMatch = transcript.atoms.slice(
-          // todo: what if emtpy?
-          priorUnmatchedSegmentsStartIndex,
-          transcript.toAbsoluteAtomIndex(match.transcriptAtomIndexes[0]),
+        const unmatchedBefore = getMatchSearchArea(
+          priorUnmatchedSubtitlesChunkIndexes,
+          priorUnmatchedTranscriptAtomIndexes,
         )
-        const unresolvedChunksBeforeMatch = subtitlesChunks.slice(
-          priorUnmatchedChunksStartIndex,
-          match.subtitlesChunkIndexes[0],
-        )
-        if (unresolvedSegmentsBeforeMatch.length || unresolvedChunksBeforeMatch.length) {
-          if (
-            unresolvedSegmentsBeforeMatch.length &&
-            unresolvedChunksBeforeMatch.length &&
-            (unresolvedSegmentsBeforeMatch.length === 1 || unresolvedChunksBeforeMatch.length === 1)
-          ) {
-            const newMatch: SegmentChunkMatch = {
-              transcriptAtomIndexes: unresolvedSegmentsBeforeMatch.map((s) => s.index),
-              subtitlesChunkIndexes: unresolvedChunksBeforeMatch.map((c) => c.index),
-              matched: true,
-            }
-            if (!matches.length && !unmatched.length) first = newMatch
-            matches.push(newMatch)
-          } else {
-            const unmatchedBefore: Unmatched = {
-              transcriptAtomIndexes: unresolvedSegmentsBeforeMatch.map((s) => s.index),
-              subtitlesChunkIndexes: unresolvedChunksBeforeMatch.map((c) => c.index),
-              matched: false,
-            }
-            if (!matches.length && !unmatched.length) first = unmatchedBefore
-            unmatched.push(unmatchedBefore)
-          }
-        }
 
-            if (!matches.length && !unmatched.length) first = match
-            matches.push(match)
+        matches.push(
+          ...(options.searchParamsProgression[completedSearchPasses + 1]
+            ? findMatches(unmatchedBefore, completedSearchPasses + 1, options)
+            : getSearchDeadEnd(searchParams, unmatchedBefore)),
+          {
+            type: 'MatchGroup',
+            params: searchParams,
+            items: {
+              subtitlesChunkIndexes: [subtitlesChunkIndex],
+              transcriptAtomIndexes: [transcriptAtomMatchIndex],
+            },
+          },
+        )
       }
     }
   }
 
-  const lastMatch: SegmentChunkMatch | null = last(matches) || null
-  const unprocessedSegmentsStartIndex = lastMatch
-    ? transcript.toAbsoluteAtomIndex(last(lastMatch.transcriptAtomIndexes)) + 1
-    : transcriptAtomsStartIndex
-  const unprocessedChunksStartIndex = lastMatch
-    ? last(lastMatch.subtitlesChunkIndexes) + 1
-    : subtitlesChunksStartIndex
-  const unresolvedSegmentsAfterMatches = transcript.atoms.slice(unprocessedSegmentsStartIndex, transcriptAtomsEnd)
-  const unresolvedChunksAfterMatches = subtitlesChunks.slice(unprocessedChunksStartIndex, subtitlesChunksEnd)
-  if (unresolvedSegmentsAfterMatches.length || unresolvedChunksAfterMatches.length) {
-    if (
-      unresolvedSegmentsAfterMatches.length &&
-      unresolvedChunksAfterMatches.length &&
-      (unresolvedSegmentsAfterMatches.length === 1 || unresolvedChunksAfterMatches.length === 1)
-    ) {
-      matches.push({
-        transcriptAtomIndexes: unresolvedSegmentsAfterMatches.map((s) => s.index),
-        subtitlesChunkIndexes: unresolvedChunksAfterMatches.map((c) => c.index),
-        matched: true,
-      })
-    } else {
-      const unmatchedAfter: Unmatched = {
-        matched: false,
-        transcriptAtomIndexes: unresolvedSegmentsAfterMatches.map((s) => s.index),
-        subtitlesChunkIndexes: unresolvedChunksAfterMatches.map((s) => s.index),
-      }
-      unmatched.push(unmatchedAfter)
-    }
-  }
+  const lastMatchInSearchGroup: SearchResolutionItem | null = last(matches) || null
 
-  return {
-    matches,
-    unmatched,
-  }
+  const transcriptSearchStart = lastMatchInSearchGroup
+    ? last(lastMatchInSearchGroup.items.transcriptAtomIndexes) + 1
+    : searchArea.transcriptAtomIndexes[0]
+  const transcriptSearchStartIndexIsWithinBounds = transcriptSearchStart <= last(searchArea.transcriptAtomIndexes)
+  const finalUnmatchedTranscriptAtomIndexes: number[] = transcriptSearchStartIndexIsWithinBounds
+    ? allAtoms.slice(transcriptSearchStart, last(searchArea.transcriptAtomIndexes) + 1).map((a) => a.absoluteIndex)
+    : []
+
+  const subtitlesSearchStart = lastMatchInSearchGroup
+    ? last(lastMatchInSearchGroup.items.subtitlesChunkIndexes) + 1
+    : searchArea.subtitlesChunkIndexes[0]
+  const subtitlesSearchStartIndexIsInWithinBounds = subtitlesSearchStart <= last(searchArea.subtitlesChunkIndexes)
+  const finalUnmatchedSubtitlesChunkIndexes: number[] = subtitlesSearchStartIndexIsInWithinBounds
+    ? allChunks.slice(subtitlesSearchStart, last(searchArea.subtitlesChunkIndexes) + 1).map((c) => c.index)
+    : []
+
+  const finalUnmatched = getMatchSearchArea(finalUnmatchedSubtitlesChunkIndexes, finalUnmatchedTranscriptAtomIndexes)
+  const finalMaybeMatched: SearchResolutionItem[] =
+    options.searchParamsProgression[completedSearchPasses + 1]
+      ? findMatches(finalUnmatched, completedSearchPasses + 1, options)
+      : getSearchDeadEnd(searchParams, finalUnmatched)
+
+  return [...matches, ...finalMaybeMatched]
 }
-
-

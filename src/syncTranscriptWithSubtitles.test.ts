@@ -1,100 +1,87 @@
-import { readFileSync, writeFileSync } from 'fs'
+import { readFileSync } from 'fs'
 import * as path from 'path'
 import {
   analyzeTranscript,
+  defaultTranscriptSegmenter,
   findMatches,
   getMatchSearchArea,
   syncTranscriptWithSubtitles,
-} from './syncTranscriptWithSubtitles2'
-import { rashomon, rashomonSrt } from './rashomon'
+} from './syncTranscriptWithSubtitles'
+import { rashomonSrt } from './rashomon'
 import { parseSync } from 'subtitle'
-import { defaultOptions } from './syncTranscriptWithSubtitles'
 
 const rashomonSegments = readFileSync(path.join(__dirname, 'rashomonAlignedImperfect.tsv'), 'utf8')
   .split('\n')
   .filter((s) => s.trim())
   .map((line, index) => {
     const [text, translation] = line.split('\t')
-    // console.log({ text, translation })
     return {
       text,
       translation,
       index,
     }
   })
-const rashomonChunks = parseSync(rashomonSrt).map((n, i) => ({
+export const rashomonChunks = parseSync(rashomonSrt).map((n, i) => ({
   text: typeof n.data === 'string' ? n.data : n.data.text,
   index: i,
 }))
 
-// describe('findMatches', () => {
-//   const transcript = rashomon
-//     // const analyzedTranscript = analyzeTranscript(segments, defaultOptions.transcriptSegmenters)
+describe('findMatches', () => {
+  describe('with one pass', () => {
+    const analyzedTranscript = analyzeTranscript(rashomonSegments, defaultTranscriptSegmenter)
+    const searchArea = getMatchSearchArea(
+      rashomonChunks.map((c) => c.index),
+      analyzedTranscript.atoms.map((a) => a.absoluteIndex),
+    )
 
-//   describe('with one pass', () => {
-//     const analyzedTranscript = analyzeTranscript(rashomonSegments, defaultOptions.transcriptSegmenters)
-//     const searchArea =  getMatchSearchArea(
-//       rashomonChunks.map((c) => c.index),
-//       analyzedTranscript.atoms.map((a) => a.absoluteIndex),
-//     )
+    const result = findMatches(searchArea, 0, {
+      subtitlesChunks: rashomonChunks,
+      transcript: analyzedTranscript,
+      searchParamsProgression: [[2, 15]],
+    })
 
-//     const result = findMatches(searchArea, 0, {
-//       subtitlesChunks: rashomonChunks,
-//       transcript: analyzedTranscript,
-//       searchParamsProgression: [
-//         [2, 15],
-//       ]
-//     })
-//     // console.log(result)
-//     // writeFileSync(process.cwd() + '/log', JSON.stringify(result, null, 2), 'utf8')
+    it('contains all sub chunks', () => {
+      const actual = result.flatMap((v) => v.items.subtitlesChunkIndexes.flatMap((ci) => rashomonChunks[ci].text))
+      const expected = rashomonChunks.map((c) => c.text)
 
-//     it('contains all sub chunks', () => {
-//       const actual = result.flatMap(v => v.items.subtitlesChunkIndexes.flatMap(ci => rashomonChunks[ci].text))
-//       const expected = rashomonChunks.map(c => c.text)
+      expect(actual).toEqual(expected)
+    })
 
-//       console.log(result.flatMap(v => v.type2 + ' ' + v.params + ' ' + v.items.subtitlesChunkIndexes.map(ci => rashomonChunks[ci].text).join(' ') + '\n'))
+    it('contains all transcript atoms', () => {
+      const actual = result.flatMap((v) =>
+        v.items.transcriptAtomIndexes.flatMap((ci) => analyzedTranscript.atoms[ci].text),
+      )
+      const expected = analyzedTranscript.atoms.map((c) => c.text)
 
-//       expect(actual).toEqual(expected)
-//     })
+      expect(actual).toEqual(expected)
+    })
+  })
+})
 
-//     it('contains all transcript atoms', () => {
-//       const actual = result.flatMap(v => v.items.transcriptAtomIndexes.flatMap(ci => analyzedTranscript.atoms[ci].text))
-//       const expected = analyzedTranscript.atoms.map(c => c.text)
-
-//       expect(actual).toEqual(expected)
-//     })
-//   })
-// })
-
-describe('syncTranscriptWithSubtitles2', () => {
+describe('syncTranscriptWithSubtitles', () => {
   const result = syncTranscriptWithSubtitles(rashomonSegments, rashomonChunks)
-  const { analyzedTranscript } = result
+  const { analyzedTranscript, matches } = result
+
+  const atomIndexes = matches.flatMap((m) => m.items.transcriptAtomIndexes)
+  const chunkIndexes = matches.flatMap((m) => m.items.subtitlesChunkIndexes)
+
+  it('has no repeat/out of order segment indexes', () => {
+    expect(atomIndexes).toEqual([...new Set(atomIndexes)])
+  })
+
+  it('has no repeat/out of order chunk indexes', () => {
+    expect(chunkIndexes).toEqual([...new Set(chunkIndexes)])
+  })
 
   it('contains all sub chunks', () => {
-    const actual = result.searched.flatMap((v) =>
-      v.items.subtitlesChunkIndexes.flatMap((ci) => rashomonChunks[ci].text),
-    )
+    const actual = result.matches.flatMap((v) => v.items.subtitlesChunkIndexes.flatMap((ci) => rashomonChunks[ci].text))
     const expected = rashomonChunks.map((c) => c.text)
-
-    console.log(
-      result.searched.flatMap(
-        (searchResultItem) =>
-          (searchResultItem.type === 'SearchDeadEnd' ? searchResultItem.reason : searchResultItem.type) +
-          ' ' +
-          searchResultItem.params +
-          '    subs: ' +
-          searchResultItem.items.subtitlesChunkIndexes.map((ci) => rashomonChunks[ci].text).join(' ') +
-          '\n    trscpt: ' + 
-          searchResultItem.items.transcriptAtomIndexes.map((ai) => analyzedTranscript.atoms[ai].text) +
-          '\n',
-      ),
-    )
 
     expect(actual).toEqual(expected)
   })
 
   it('contains all transcript atoms', () => {
-    const actual = result.searched.flatMap((v) =>
+    const actual = result.matches.flatMap((v) =>
       v.items.transcriptAtomIndexes.flatMap((ci) => analyzedTranscript.atoms[ci].text),
     )
     const expected = analyzedTranscript.atoms.map((c) => c.text)

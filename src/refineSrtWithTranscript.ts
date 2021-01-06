@@ -1,10 +1,13 @@
-import * as fs from 'fs'
-import { parseSync, stringifySync, NodeCue, NodeList } from 'subtitle'
+import { parseSync, NodeCue, Cue } from 'subtitle'
 import { TranscriptSegment } from './analyzeTranscript'
 import { last } from './last'
-import { SearchResolutionItem, SyncResult } from './syncTranscriptWithSubtitles2'
+import { SyncResult } from './syncTranscriptWithSubtitles'
 
-// const transcriptSegments = getCuesForTranscript(transcript, chunks)
+type MatchesGroupedByTranscriptSegments = { segments: TranscriptSegment[]; cues: Cue[] }
+
+export function refineSrtFileWithTranscript(srtFilePath: string, transcriptFilePath: string) {
+  // TODO: fill in
+}
 
 export function refineSrtWithTranscript(srtText: string, synced: SyncResult) {
   // TODO: get rid of any overlaps
@@ -18,49 +21,80 @@ export function refineSrtWithTranscript(srtText: string, synced: SyncResult) {
 
   const allAtoms = synced.analyzedTranscript.atoms
 
-  const groupedBySegment: { segment: TranscriptSegment; resolved: SearchResolutionItem[]; text: string }[] = []
-  let textBbuffer
-  for (const item of synced.searched) {
+  const groupedBySegment: MatchesGroupedByTranscriptSegments[] = []
+  for (const matchOrDeadEnd of synced.matches) {
     const lastItem = last(groupedBySegment)
-    const lastAtomIndex = lastItem && lastItem.resolved[0].items.transcriptAtomIndexes[0]
-    const atomIndex = item.items.transcriptAtomIndexes[0]
+    const lastSegments = lastItem && lastItem.segments
+
+    const atomIndex = matchOrDeadEnd.items.transcriptAtomIndexes[0]
     const atom = allAtoms[atomIndex]
 
     if (!atom) {
-      console.log({ noTranscriptBit: item, subchunktext: item.items.subtitlesChunkIndexes.map((i) => chunks[i].text) })
+      // TODO: check this
+      console.log({
+        noTranscriptBit: matchOrDeadEnd,
+        subchunktext: matchOrDeadEnd.items.subtitlesChunkIndexes.map((i) => chunks[i].text),
+      })
       continue
     }
 
-    const segment = atom.segment
+    const segments = [...new Set(matchOrDeadEnd.items.transcriptAtomIndexes.map((ai) => allAtoms[ai].segment))]
 
-    const newText = item.items.transcriptAtomIndexes.map((ai) => allAtoms[ai].text).join('')
-
-    if (lastAtomIndex != null && allAtoms[lastAtomIndex].segment === segment) {
-      lastItem.resolved.push(item)
-      lastItem.text += newText
+    const newCues = matchOrDeadEnd.items.subtitlesChunkIndexes.map((i) => chunks[i].data)
+    // maybe there should really always be cues? but needed this check for jw hiligaynon
+    const noNewCues = !newCues.length
+    if (
+      lastSegments != null &&
+      ((lastSegments.length && lastSegments.some((ls) => segments.includes(ls))) || noNewCues)
+    ) {
+      lastItem.segments.push(...segments.filter((s) => !lastSegments.includes(s)))
+      lastItem.cues.push(...newCues)
     } else
       groupedBySegment.push({
-        segment,
-        resolved: [item],
-        text: newText,
+        segments,
+        cues: newCues,
       })
   }
 
-  const srtBlocks: NodeCue[] = groupedBySegment.flatMap(({ segment, resolved, text }) => {
-    const firstChunkIndex = resolved[0].items.subtitlesChunkIndexes[0]
-    const firstChunk = chunks[firstChunkIndex]
-    const lastChunkIndex = last(last(resolved).items.subtitlesChunkIndexes)
-    const lastChunk = chunks[lastChunkIndex]
+  const srtCues = toSrtCues(groupedBySegment, ({ segments }) => segments.map((s) => s.text).join('\n'))
+  const translationSrtCues = toSrtCues(groupedBySegment, ({ segments }) =>
+    segments.map((s) => s.translation).join('\n'),
+  )
+
+  return {
+    groupedBySegment,
+    srtCues,
+    translationSrtCues,
+  }
+}
+
+function toSrtCues(
+  bySegment: MatchesGroupedByTranscriptSegments[],
+  getText: (segmentMatches: MatchesGroupedByTranscriptSegments) => string,
+): NodeCue[] {
+  return bySegment.flatMap((segmentMatches) => {
+    const { cues } = segmentMatches
+    const text = getText(segmentMatches)
+
+    const firstChunk = cues[0]
+    const lastChunk = last(cues)
     if (!firstChunk || !lastChunk) {
-      console.log({ firstChunk, lastChunk, firstChunkIndex, lastChunkIndex })
+      console.log({ firstChunk, lastChunk })
       const chunk = firstChunk || lastChunk
+
+      if (!chunk) {
+        console.error('match group missing subtitle chunks!')
+        console.log('match group missing subtitle chunks!', segmentMatches)
+        return [] // TODO: accommodate chunk-less initial searchgroup
+      }
+
       return [
         {
           type: 'cue',
           data: {
-            start: chunk.data.start,
-            end: chunk.data.end,
-            text: text,
+            start: chunk.start,
+            end: chunk.end,
+            text,
           },
         },
       ]
@@ -68,102 +102,10 @@ export function refineSrtWithTranscript(srtText: string, synced: SyncResult) {
     return {
       type: 'cue',
       data: {
-        start: firstChunk.data.start,
-        end: lastChunk.data.end,
-        // text: resolved.flatMap(r => r.items.transcriptAtomIndexes)
-        //   .map((i) => synced.analyzedTranscript.atoms[i].text)
-        //   .join(''),
+        start: firstChunk.start,
+        end: lastChunk.end,
         text,
       },
     }
   })
-
-  const srtTranslationBlocks: NodeCue[] = groupedBySegment.flatMap(({ segment, resolved, text }) => {
-    const firstChunkIndex = resolved[0].items.subtitlesChunkIndexes[0]
-    const firstChunk = chunks[firstChunkIndex]
-    const lastChunkIndex = last(last(resolved).items.subtitlesChunkIndexes)
-    const lastChunk = chunks[lastChunkIndex]
-    if (!firstChunk || !lastChunk) {
-      console.log({ firstChunk, lastChunk, firstChunkIndex, lastChunkIndex })
-      const chunk = firstChunk || lastChunk
-      return [
-        {
-          type: 'cue',
-          data: {
-            start: chunk.data.start,
-            end: chunk.data.end,
-            text: segment.translation,
-          },
-        },
-      ]
-    }
-    return {
-      type: 'cue',
-      data: {
-        start: firstChunk.data.start,
-        end: lastChunk.data.end,
-        // text: resolved.flatMap(r => r.items.transcriptAtomIndexes)
-        //   .map((i) => synced.analyzedTranscript.atoms[i].text)
-        //   .join(''),
-        text: segment.translation,
-      },
-    }
-  })
-
-
-  const newSrtText = stringifySync(srtBlocks, { format: 'SRT' })
-  const translationSrtText = stringifySync(srtTranslationBlocks, { format: 'SRT' })
-  // const translationSrtText =  stringifySync(
-  //   withoutStraySegments.map((x) => ({
-  //     type: 'cue',
-  //     data: {
-  //       start: chunks[x.subtitlesChunkIndexes[0]].data.start,
-  //       end: chunks[last(x.subtitlesChunkIndexes)].data.end,
-  //       text: x.transcriptAtomIndexes
-  //         .map((i) => {
-  //           // TODO: fill in
-  //           return ''
-  //           // synced.analyzedTranscript.atomAt(i).translation
-  //         })
-  //         .join(''),
-  //     },
-  //   })),
-  //   { format: 'SRT' },
-  // )
-
-  console.log({ writingTo: __dirname + '../out.srt' })
-  fs.writeFileSync(__dirname + '/../out.srt', newSrtText, 'utf8')
-  fs.writeFileSync(__dirname + '/../out_translation.srt', translationSrtText, 'utf8')
-
-  return {
-    groupedBySegment,
-    srtBlocks,
-  }
 }
-
-// function attachStraySegments(synced: SyncedTranscriptAndSubtitles) {
-//   const { matches, unmatched, analyzedTranscript } =synced
-//   const itemsWithSubtitlesChunks: Array<SegmentChunkMatch | Unmatched> = [
-//     ...matches.filter((m) => m.subtitlesChunkIndexes.length),
-//     ...unmatched.filter((m) => m.subtitlesChunkIndexes.length),
-//   ].sort((a, b) => a.subtitlesChunkIndexes[0] - b.subtitlesChunkIndexes[0])
-
-//   const straySegmentsGroups: Array<SegmentChunkMatch | Unmatched> = unmatched
-//     .filter((m) => !m.subtitlesChunkIndexes.length)
-//     .sort((a, b) => analyzedTranscript.toAbsoluteAtomIndex(a.transcriptAtomIndexes[0]) - analyzedTranscript.toAbsoluteAtomIndex(b.transcriptAtomIndexes[0]))
-
-//   for (const straySegmentsGroup of straySegmentsGroups) {
-//     const nextTranscriptSegmentIndex = analyzedTranscript.toAbsoluteAtomIndex(last(straySegmentsGroup.transcriptAtomIndexes)) + 1
-//     // TODO: stragglers at end? start?
-//     const matchWithChunks = itemsWithSubtitlesChunks.find((x) =>
-//       x.transcriptAtomIndexes.some(i => analyzedTranscript.toAbsoluteAtomIndex(i) === nextTranscriptSegmentIndex),
-//     )
-//     if (matchWithChunks) {
-//       matchWithChunks.transcriptAtomIndexes = [
-//         ...straySegmentsGroup.transcriptAtomIndexes,
-//         ...matchWithChunks.transcriptAtomIndexes,
-//       ]
-//     }
-//   }
-//   return itemsWithSubtitlesChunks
-// }

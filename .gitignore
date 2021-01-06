@@ -1,2 +1,7 @@
 node_modules
 /lib
+
+output
+log
+
+.DS_Store
