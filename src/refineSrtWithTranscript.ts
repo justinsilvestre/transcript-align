@@ -1,12 +1,26 @@
+import * as fs from 'fs'
 import { parseSync, NodeCue, Cue } from 'subtitle'
-import { TranscriptSegment } from './analyzeTranscript'
+import { analyzeTranscript, TranscriptSegment } from './analyzeTranscript'
+import { getTsvSegmentsFromText } from './getTsvSegments'
 import { last } from './last'
-import { SyncResult } from './syncTranscriptWithSubtitles'
+import { defaultTranscriptSegmenter, SyncResult, syncTranscriptWithSubtitles } from './syncTranscriptWithSubtitles'
 
 type MatchesGroupedByTranscriptSegments = { segments: TranscriptSegment[]; cues: Cue[] }
 
 export function refineSrtFileWithTranscript(srtFilePath: string, transcriptFilePath: string) {
   // TODO: fill in
+  const srtText =  fs.readFileSync(srtFilePath, 'utf-8')
+  const transcriptText =  fs.readFileSync(transcriptFilePath, 'utf-8')
+  const transcriptAnalysis = analyzeTranscript(getTsvSegmentsFromText(transcriptText), defaultTranscriptSegmenter)
+
+  const srtChunks = parseSync(srtText).map((n, i) => ({
+    text: typeof n.data === 'string' ? n.data : n.data.text,
+    index: i,
+  }))
+  const synced = syncTranscriptWithSubtitles(transcriptAnalysis.segments, srtChunks)
+  const refined = refineSrtWithTranscript(srtText, synced)
+
+  return refined
 }
 
 export function refineSrtWithTranscript(srtText: string, synced: SyncResult) {

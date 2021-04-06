@@ -5,14 +5,14 @@ import * as util from 'util'
 import yargs from 'yargs'
 // @ts-ignore
 import { hideBin } from 'yargs/helpers'
-import { getDom } from './jsdom'
-import { lfbChapters, lfbContentFolderName, lfbImages } from './jwData'
+import { getDom } from '../jsdom'
+import { lfbChapters, lfbContentFolderName, lfbImages } from '../jwData'
 import { JSDOM } from 'jsdom'
 import * as papa from 'papaparse'
-import { getTsvSegmentsFromText, parseSrt } from './getTsvSegments'
-import { syncTranscriptWithSubtitles } from './syncTranscriptWithSubtitles'
-import { refineSrtWithTranscript } from './refineSrtWithTranscript'
-import logMatchesResult from './logMatchesResult'
+import { getTsvSegmentsFromText, parseSrt } from '../getTsvSegments'
+import { syncTranscriptWithSubtitles } from '../syncTranscriptWithSubtitles'
+import { refineSrtWithTranscript } from '../refineSrtWithTranscript'
+import logMatchesResult from '../logMatchesResult'
 import { NodeCue, stringifySync } from 'subtitle'
 
 type Section = {
@@ -22,14 +22,22 @@ type Section = {
   getTsvText: () => Promise<string>
 }
 
+console.log(
+  'usage:\n' +
+    ` yarn jw \\
+ --l1 tl \\
+ --l2 en \\
+ --m ~/Downloads/jw_work/Lessons\\ You\\ Can\\ Learn\\ from\\ the\\ Bible\\ -\\ Hiligaynon\\ lfb_HV.mp3.zip \\
+ --e1 ~/Downloads/jw_work/Lessons\\ You\\ Can\\ Learn\\ from\\ the\\ Bible\\ -\\ Hiligaynon\\ lfb_HV.epub \\
+ --e2 ~/Downloads/jw_work/Lessons\\ You\\ Can\\ Learn\\ from\\ the\\ Bible\\ -\\ English\\ lfb_E.epub \\
+ --a ~/code/af-aligner/scripts/LF_aligner_3.12_with_modules.pl`,
+)
 
 // REMINDER: DON'T CONCAT AAC AUDIO.
-
 
 // SLIDESHOW APPROACH: https://superuser.com/questions/1320296/ffmpeg-turning-images-audio-into-video-with-ffmpeg
 // using concat demuxer to make images into video using durations https://trac.ffmpeg.org/wiki/Slideshow
 // REPEAT LAST ONE LIKE IT SAYS!!
-
 
 // forum post about doing what i am with the audio + images -> video?
 // https://forum.videohelp.com/threads/391462-Need-Help-to-convert-mp3-to-mp4-using-mp3-s-album-art-pic-as-still-pic
@@ -49,7 +57,6 @@ type Section = {
 // echo !count! files converted
 //
 // pause
-
 
 const argv = yargs(hideBin(process.argv)).argv
 
@@ -157,7 +164,6 @@ async function start() {
   log(`Writing to ${combinedEpubContentTextPath2}`)
   fs.writeFileSync(combinedEpubContentTextPath2, epub2Text, 'utf8')
 
-
   log(`Making video at ${vidOutputPath}`)
   if (fs.existsSync(vidOutputPath)) log(`Video already exists! skipping.`)
   else
@@ -218,7 +224,7 @@ async function prepareWorkspace() {
   )
 
   if (!fs.existsSync(inWorkingDir('text'))) fs.mkdirSync(inWorkingDir('text'))
-if (!fs.existsSync(inWorkingDir('alignment'))) fs.mkdirSync(inWorkingDir('alignment'))
+  if (!fs.existsSync(inWorkingDir('alignment'))) fs.mkdirSync(inWorkingDir('alignment'))
 
   await workspaceStep(
     `Extracting EPUB content`,
@@ -342,7 +348,6 @@ if (!fs.existsSync(inWorkingDir('alignment'))) fs.mkdirSync(inWorkingDir('alignm
       }),
     )
   }
-
 
   await workspaceStep(`Creating big audio at ${bigAudioOutputPath}`, fs.existsSync(bigAudioOutputPath), async () => {
     await concatAudios(bigAudioOutputPath)
@@ -495,7 +500,7 @@ function getSrtsFromTranscripts(audioSections: Section[]) {
   // there is some drift.
   // this padding works for lfb, so we can judge the start/end of each sections' subtitles cues
   // pretty accurately
-  const PADDING = -.020417745762689125
+  const PADDING = -0.020417745762689125
   const { startsAndEnds: sectionStartsAndEnds } = audioSections.reduce(
     (acc, { duration }) => {
       const paddedDuration = duration + PADDING
@@ -511,7 +516,6 @@ function getSrtsFromTranscripts(audioSections: Section[]) {
 
   // TODO: assert no chunks repeated
   const refined = sectionStartsAndEnds.map((section, sectionIndex) => {
-
     // TODO: optimize
     const sectionChunks = allSectionsAutoSrtChunks
       .filter((chunk) => {
@@ -520,7 +524,6 @@ function getSrtsFromTranscripts(audioSections: Section[]) {
         return chunkStartSeconds < section.end && chunkStartSeconds >= section.start
       })
       .map((s, index) => ({ start: s.start, end: s.end, absoluteIndex: s.index, relativeIndex: index, text: s.text }))
-
 
     return {
       sync: async () => {
@@ -534,11 +537,17 @@ function getSrtsFromTranscripts(audioSections: Section[]) {
           sectionSegments,
           sectionChunks.map((s) => ({ ...s, index: s.relativeIndex })),
         )
-        console.log({ sectionChunks: sectionChunks})
-        const refined = refineSrtWithTranscript(stringifySync( sectionChunks.map(s => ({
-          type: 'cue',
-          data: s
-        })), { format: 'SRT'}), synced)
+        console.log({ sectionChunks: sectionChunks })
+        const refined = refineSrtWithTranscript(
+          stringifySync(
+            sectionChunks.map((s) => ({
+              type: 'cue',
+              data: s,
+            })),
+            { format: 'SRT' },
+          ),
+          synced,
+        )
         logMatchesResult(
           synced.matches,
           synced.analyzedTranscript,
@@ -553,7 +562,7 @@ function getSrtsFromTranscripts(audioSections: Section[]) {
 
 async function getDuration(mp3Path: string): Promise<number> {
   const { stdout, stderr } = await execPromise(
-    `ffmpeg -i ${pathArg(mp3Path)} 2>&1 | grep Duration | sed 's/Duration: \(.*\), start/\1/g'`
+    `ffmpeg -i ${pathArg(mp3Path)} 2>&1 | grep Duration | sed 's/Duration: \(.*\), start/\1/g'`,
   )
 
   if (stderr) {
@@ -563,10 +572,10 @@ async function getDuration(mp3Path: string): Promise<number> {
 
   const segments = stdout.match(/(\d+):(\d+):(\d+\.?\d+)/)
   if (!segments) throw new Error(`Invalid duration for ${mp3Path} \n ${stdout}`)
-  const [, hr, m, s, ] = segments
+  const [, hr, m, s] = segments
   const hours = Number(hr)
   const minutes = Number(m)
   const seconds = Number(s)
 
-  return (hours * 60 * 60) + (minutes * 60) + seconds
+  return hours * 60 * 60 + minutes * 60 + seconds
 }

@@ -10,7 +10,8 @@
     "format": "prettier --write \"src/**/*.ts\" \"src/**/*.js\"",
     "lint": "tslint -p tsconfig.json",
     "test": "jest --modulePathIgnorePatterns=lib",
-    "jw": "yarn build && node lib/jw.js"
+    "jw": "yarn build && node lib/scripts/jw.js",
+    "refine-srt": "yarn build && node lib/scripts/refineSrtWithTranscript.js"
   },
   "devDependencies": {
     "@babel/core": "^7.12.10",
