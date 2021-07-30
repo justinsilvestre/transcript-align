@@ -26,10 +26,17 @@ if (srtPath && transcriptPath) {
     { format: 'SRT' },
   )
 
+
+
   console.log('writing to', outputPath)
 
   if (!outputPath) console.log(newSrtText)
 
+
+
+// console.log('result', result.)
+
+if (outputPath)
   fs.writeFileSync(outputPath, newSrtText, 'utf-8')
 } else {
   console.log('please provide correct arguments!')

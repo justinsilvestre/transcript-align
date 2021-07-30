@@ -3,21 +3,59 @@ import { parseSync, NodeCue, Cue } from 'subtitle'
 import { analyzeTranscript, TranscriptSegment } from './analyzeTranscript'
 import { getTsvSegmentsFromText } from './getTsvSegments'
 import { last } from './last'
-import { defaultTranscriptSegmenter, SyncResult, syncTranscriptWithSubtitles } from './syncTranscriptWithSubtitles'
+import { SyncResult, syncTranscriptWithSubtitles } from './syncTranscriptWithSubtitles'
+
+const LOGMISSNG = true
 
 type MatchesGroupedByTranscriptSegments = { segments: TranscriptSegment[]; cues: Cue[] }
 
+const segmenter = /[「\p{L}\p{N}]+([「\p{L}\p{N}]|[^\S\r\n]+)*([^「\p{L}\p{N}]+|$)/gu
+
 export function refineSrtFileWithTranscript(srtFilePath: string, transcriptFilePath: string) {
   // TODO: fill in
-  const srtText =  fs.readFileSync(srtFilePath, 'utf-8')
-  const transcriptText =  fs.readFileSync(transcriptFilePath, 'utf-8')
-  const transcriptAnalysis = analyzeTranscript(getTsvSegmentsFromText(transcriptText), defaultTranscriptSegmenter)
+  const srtText = fs.readFileSync(srtFilePath, 'utf-8')
+  const transcriptText = fs.readFileSync(transcriptFilePath, 'utf-8')
+  // const [...match] = transcriptText.matchAll(/[「\p{L}\p{N}]+([\p{L}\p{N}]|[^\S\r\n]+)*([^「\p{L}\p{N}]+|$)/gu) || []
+  const [...match] = transcriptText.matchAll(segmenter) || []
+
+  console.log(match.map((t) => t[0]))
+  const transcriptSegments = match.map((text, index) => ({
+    index,
+    text: text[0],
+    translation: '',
+  }))
+
+  // TODO: resolve "noTranscriptBit" issues
+
+  const transcriptAnalysis = analyzeTranscript(transcriptSegments, segmenter)
 
   const srtChunks = parseSync(srtText).map((n, i) => ({
     text: typeof n.data === 'string' ? n.data : n.data.text,
     index: i,
   }))
   const synced = syncTranscriptWithSubtitles(transcriptAnalysis.segments, srtChunks)
+
+  const unsyncedBits = synced.matches.filter((matchOrDeadEnd) => {
+    if (matchOrDeadEnd.type === 'SearchDeadEnd') return true
+
+    const atomIndex = matchOrDeadEnd.items.transcriptAtomIndexes[0]
+    const allAtoms = synced.analyzedTranscript.atoms
+
+    const atom = allAtoms[atomIndex]
+
+    return !atom
+  })
+  console.log(
+    'unsyncedBits',
+    unsyncedBits.map((matchOrDeadEnd) => {
+      return {
+        ...matchOrDeadEnd,
+        srtText: matchOrDeadEnd.items.subtitlesChunkIndexes.map((i) => srtChunks[i].text),
+        transcriptText: matchOrDeadEnd.items.transcriptAtomIndexes.map((i) => transcriptAnalysis.atoms[i].text),
+      }
+    }),
+  )
+
   const refined = refineSrtWithTranscript(srtText, synced)
 
   return refined
@@ -43,9 +81,10 @@ export function refineSrtWithTranscript(srtText: string, synced: SyncResult) {
     const atomIndex = matchOrDeadEnd.items.transcriptAtomIndexes[0]
     const atom = allAtoms[atomIndex]
 
-    if (!atom) {
+    if (LOGMISSNG && !atom) {
       // TODO: check this
       console.log({
+        atomIndex,
         noTranscriptBit: matchOrDeadEnd,
         subchunktext: matchOrDeadEnd.items.subtitlesChunkIndexes.map((i) => chunks[i].text),
       })
@@ -70,10 +109,8 @@ export function refineSrtWithTranscript(srtText: string, synced: SyncResult) {
       })
   }
 
-  const srtCues = toSrtCues(groupedBySegment, ({ segments }) => segments.map((s) => s.text).join('\n'))
-  const translationSrtCues = toSrtCues(groupedBySegment, ({ segments }) =>
-    segments.map((s) => s.translation).join('\n'),
-  )
+  const srtCues = toSrtCues(groupedBySegment, ({ segments }) => segments.map((s) => s.text).join(''))
+  const translationSrtCues = toSrtCues(groupedBySegment, ({ segments }) => segments.map((s) => s.translation).join(''))
 
   return {
     groupedBySegment,
