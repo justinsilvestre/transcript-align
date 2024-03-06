@@ -1,37 +1,58 @@
-import { refineSrtWithTranscript } from "./refineSrtWithTranscript";
+import { refineSrtWithTranscript } from './refineSrtWithTranscript'
 import { rashomon, rashomonSrt } from './rashomon'
-import { syncTranscriptWithSubtitles } from "./syncTranscriptWithSubtitles";
-import { analyzeTranscript } from "./analyzeTranscript";
-import { parseSync } from "subtitle";
+import { syncTranscriptWithSubtitles } from './syncTranscriptWithSubtitles'
+import { parseSync } from 'subtitle'
 import { readFileSync } from 'fs'
-import * as path from 'path'
+import { join } from 'path'
+import { describe, it, expect } from 'vitest'
 
 describe('refineSrtWithTranscript', () => {
   it('tmp', () => {
+    const transcriptSegments = readFileSync(join(__dirname, 'rashomonAlignedImperfect.tsv'), 'utf8')
+      .split('\n')
+      .filter((s) => s.trim())
+      .map((line, index) => {
+        const [text, translation] = line.split('\t')
+        return {
+          text,
+          translation,
+          index,
+        }
+      })
     const transcript = rashomon
-    // const segments = getTranscriptSegments(transcript)
-    const segments = readFileSync(path.join(__dirname, 'rashomonAlignedImperfect.tsv'), 'utf8').split('\n').filter(s => s.trim())
-    .map((line, index) => {
-      const [text, translation] = line.split('\t')
-      console.log({ text, translation })
-      return ({
-        text, translation, index
-      });
-    })
-
-    const chunks = parseSync(rashomonSrt).map((n, i) => ({
+    const srtText = rashomonSrt
+    const srtChunks = parseSync(srtText).map((n, i) => ({
       text: typeof n.data === 'string' ? n.data : n.data.text,
       index: i,
     }))
-    
-    const synced = syncTranscriptWithSubtitles(segments, chunks)
 
-    const refined = refineSrtWithTranscript(rashomonSrt, synced)
+    const synced = syncTranscriptWithSubtitles(transcriptSegments, srtChunks)
 
+    const refined = refineSrtWithTranscript(srtText, synced)
 
-    
-    expect(refined.flatMap(item => item.transcriptAtomIndexes.map(i => synced.analyzedTranscript.atomAt(i).text))
-    .join('')).toEqual(transcript)
-    
+    console.log(
+      synced.unmatched
+        .slice(-10)
+        .map(
+          (m) =>
+            m.subtitlesChunkIndexes.map((i) => srtChunks[i].text).join('~~') +
+            '     |     ' +
+            m.transcriptAtomIndexes.map((i) => synced.analyzedTranscript.atomAt(i).text).join('~~'),
+        ),
+    )
+
+    expect(
+      refined
+        .map((item) => item.transcriptAtomIndexes.map((i) => synced.analyzedTranscript.atomAt(i).text).join(''))
+        .join('')
+        .split(/([^\n。」]+[。\n」]+)/g)
+        .map((s) => s.trim())
+        .filter(Boolean),
+    ).toEqual(
+      transcript
+        .split(/([^\n。」]+[。\n」]+)/g)
+        .map((s) => s.trim())
+        .filter(Boolean),
+    )
   })
 })

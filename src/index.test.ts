@@ -1,14 +1,14 @@
 import { syncTranscriptWithSubtitles, getAnchorMatches, defaultOptions } from './syncTranscriptWithSubtitles'
-import { analyzeTranscript } from "./analyzeTranscript"
+import { analyzeTranscript } from './analyzeTranscript'
 import { rashomon, rashomonSrt } from './rashomon'
 import { parseSync } from 'subtitle'
+import { describe, it, expect } from 'vitest'
 
 const singleTranscriptSegmentInput = (text: string) => [{ text: rashomon, translation: '', index: 0 }]
 
 describe('analyzeTranscript', () => {
   it('returns faithful transcript segments', () => {
-    const cues = analyzeTranscript(singleTranscriptSegmentInput(rashomon), defaultOptions.transcriptSegmenters)
-      .atoms
+    const cues = analyzeTranscript(singleTranscriptSegmentInput(rashomon), defaultOptions.transcriptSegmenters).atoms
 
     expect(cues.map((c) => c.text).join('')).toEqual(rashomon)
   })
@@ -33,8 +33,8 @@ describe('getAnchorMatches', () => {
 
 describe('getCuesForTranscript', () => {
   const transcript = rashomon
-    const segmentsInput = singleTranscriptSegmentInput(transcript)
-    const analyzedTranscript = analyzeTranscript(segmentsInput, defaultOptions.transcriptSegmenters)
+  const segmentsInput = singleTranscriptSegmentInput(transcript)
+  const analyzedTranscript = analyzeTranscript(segmentsInput, defaultOptions.transcriptSegmenters)
   const chunks = parseSync(rashomonSrt).map((n, i) => ({
     text: typeof n.data === 'string' ? n.data : n.data.text,
     index: i,
@@ -42,8 +42,9 @@ describe('getCuesForTranscript', () => {
   // TODO: check unmatched as well
   const { matches, unmatched } = syncTranscriptWithSubtitles(segmentsInput, chunks)
 
-  const atomIndexes = matches.flatMap((m) => m.transcriptAtomIndexes)
-    .map(i => analyzedTranscript.atomAt(i).absoluteIndex)
+  const atomIndexes = matches
+    .flatMap((m) => m.transcriptAtomIndexes)
+    .map((i) => analyzedTranscript.atomAt(i).absoluteIndex)
   const chunkIndexes = matches.flatMap((m) => m.subtitlesChunkIndexes)
 
   it('has no repeat/out of order segment indexes', () => {
@@ -55,24 +56,26 @@ describe('getCuesForTranscript', () => {
   })
 
   it('includes all sub chunks', () => {
-    expect([
-      ...matches.flatMap(m => m.subtitlesChunkIndexes),
-      ...unmatched.flatMap(m => m.subtitlesChunkIndexes),
-    ].sort((a,b) => a - b)).toEqual(parseSync(rashomonSrt).map((s, i) => i))
+    expect(
+      [...matches.flatMap((m) => m.subtitlesChunkIndexes), ...unmatched.flatMap((m) => m.subtitlesChunkIndexes)].sort(
+        (a, b) => a - b,
+      ),
+    ).toEqual(parseSync(rashomonSrt).map((s, i) => i))
   })
 
   it('includes all text segments', () => {
     const segments = singleTranscriptSegmentInput(transcript)
     // const analyzedTranscript = analyzeTranscript(segments)
     const actual = [
-      ...matches.flatMap(m => m.transcriptAtomIndexes),
-      ...unmatched.flatMap(m => m.transcriptAtomIndexes),
-    ].sort((a, b) => {
-      return analyzedTranscript.atomAt(a).absoluteIndex - analyzedTranscript.atomAt(b).absoluteIndex
-    }).map(i => analyzedTranscript.atomAt(i).text)
-    .join('')
+      ...matches.flatMap((m) => m.transcriptAtomIndexes),
+      ...unmatched.flatMap((m) => m.transcriptAtomIndexes),
+    ]
+      .sort((a, b) => {
+        return analyzedTranscript.atomAt(a).absoluteIndex - analyzedTranscript.atomAt(b).absoluteIndex
+      })
+      .map((i) => analyzedTranscript.atomAt(i).text)
+      .join('')
 
-    expect(actual)
-    .toEqual(segments.map((s) => s.text).join(''))
+    expect(actual).toEqual(segments.map((s) => s.text).join(''))
   })
 })
