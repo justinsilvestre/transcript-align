@@ -10,10 +10,8 @@ import {
   getRegionsByMatchStatus,
   preprocessBaseTextSegments,
   syncTranscriptWithSubtitles,
-  UnmatchedBaseTextSubsegment,
 } from './syncTranscriptWithSubtitles'
 import { writeFileSync } from 'fs'
-import { get } from 'http'
 
 const singleTranscriptSegmentInput = (text: string) => [{ text, normalizedText: defaultNormalize(text), index: 0 }]
 
@@ -25,7 +23,7 @@ const htmlPreviewOutputPath = path.join(tmpFolder, 'preview.html')
 
 const defaultNormalize = (text: string): string =>
   text
-    .replace(/[\s。？」、！』]+/g, '')
+    .replace(/[『「\s。？」、！』―]+/g, '')
     .trim()
     .toLowerCase()
 describe('findMatches', () => {
@@ -34,7 +32,7 @@ describe('findMatches', () => {
     const segments = singleTranscriptSegmentInput(transcript)
     const subsegments = preprocessBaseTextSegments(
       segments,
-      /[^\s。？」、！』]+[\s。？、！」』]+|[^\s。？」、！』]+[\s。？、！」』]+?$/gu,
+      /[^\s。？、！―]+[\s。？、！―]+[」』]*|[^\s。？」、！』―]+[\s。？、！―」』]*$/gu,
       defaultNormalize,
     )
     const ttsSegments = parseSync(rashomonSrt).map((n, i) => ({
@@ -71,7 +69,7 @@ describe('syncTranscriptWithSubtitles', () => {
         index: i,
         normalizedText: defaultNormalize(typeof n.data === 'string' ? n.data : n.data.text),
       })),
-      baseTextSubsegmenter: /[^\s。？」、！』]+[\s。？、！」』]+|[^\s。？」、！』]+[\s。？、！」』]+?$/gu,
+      baseTextSubsegmenter: /[^\s。？、！―]+[\s。？、！―]+[」』]*|[^\s。？」、！』―]+[\s。？、！―」』]*$/gu,
     })
 
     const htmlPreview = getHtmlPreview(results, getBaseTextSubsegmentText, getTtsSegmentText)
@@ -89,12 +87,12 @@ function getHtmlPreview(
   const getHighlightColor = (match: BaseTextSubsegmentMatchResult) => {
     if (match.ttsSegmentIndex == null) return '#f0f0f0' // no highlight for unmatched segments
     const levenshteinThreshold = match.matchParameters.levenshteinThreshold
-    if (levenshteinThreshold <= 2) return '#d0f0d0' // light green for close matches
-    if (levenshteinThreshold <= 5) return '#c0e0c0' // medium green for less close matches
-    if (levenshteinThreshold <= 10) return '#b0d0b0' // darker green for even less close matches
-    if (levenshteinThreshold <= 20) return '#a0c0a0' // even darker green for more distant matches
-    if (levenshteinThreshold <= 30) return '#90b090' // very dark green for distant matches
-    if (levenshteinThreshold > 30) {
+    if (levenshteinThreshold <= 1) return '#e8fbe8' // very light green for close matches
+    if (levenshteinThreshold <= 2) return '#d0f0d0' // light green for less close matches
+    if (levenshteinThreshold <= 3) return '#c0e0c0' // medium green for even less close matches
+    if (levenshteinThreshold <= 4) return '#b0d0b0' // darker green for more distant matches
+    if (levenshteinThreshold <= 5) return '#a0c0a0' // even darker green for very distant matches
+    if (levenshteinThreshold > 6) {
       // if levenshtein threshold is very high
       return '#f0f0f0' // default gray for less close matches
     }
@@ -103,7 +101,7 @@ function getHtmlPreview(
   const regions = getRegionsByMatchStatus({ results, getBaseTextSubsegmentText, getTtsSegmentText })
 
   const mainContent = regions
-    .map((region, regionIndex) => {
+    .map((region) => {
       if (!region.isMatching) {
         const ttsSegments = getArrayIndices(region.ttsSegments.start, region.ttsSegments.end).map((i) => {
           return getTtsSegmentText(i)
@@ -125,13 +123,13 @@ function getHtmlPreview(
           const ttsSegmentText = r.ttsSegmentIndex == null ? null : getTtsSegmentText(r.ttsSegmentIndex)
           const baseTextSubsegmentText = getBaseTextSubsegmentText(r.baseTextSegmentIndex, r.baseTextSubsegmentIndex)
 
-          return ttsSegmentText && r.ttsSegmentIndex != null
-            ? `<div style="background-color: ${getHighlightColor(
-                r,
-              )}; padding: 10px; margin: 5px;">${baseTextSubsegmentText} <span style="color: #007bff;">${ttsSegmentText}</span></div>`
-            : `<div style="background-color: #f0f0f0; padding: 10px; margin: 5px;">
-          ${baseTextSubsegmentText}
-</div>`
+          return `<div style="background-color: ${getHighlightColor(
+            r,
+          )}; padding: 10px; margin: 5px;">${baseTextSubsegmentText} <span style="color: #007bff;">${ttsSegmentText}</span>
+          <div style="color: green; height: 0.3em">${Array(r.matchParameters.minMatchLength)
+            .fill('•')
+            .join('&nbsp;&nbsp;&nbsp;')}</div>
+        </div>`
         })
         .join('')
     })

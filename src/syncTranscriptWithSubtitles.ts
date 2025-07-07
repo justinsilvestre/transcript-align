@@ -63,7 +63,8 @@ export function syncTranscriptWithSubtitles(options: {
     index,
   }))
   const subsegments = preprocessBaseTextSegments(baseTextSegments, baseTextSubsegmenter, normalizeBaseTextSubsegment)
-  const firstPass = findMatches({
+
+  let latestPass = findMatches({
     baseTextSubsegments: subsegments,
     baseTextSegments: baseTextSegments,
     ttsSegments: ttsSegments,
@@ -76,68 +77,104 @@ export function syncTranscriptWithSubtitles(options: {
     ttsSegmentsEnd: ttsSegments.length,
   })
 
-  let passNumber = 2
+  let passNumber = 1
 
-  const levenshteinThreshold = 10
-  let increasingLevenshteinThreshold = continueFindingMatches({
-    baseTextSegments,
-    baseTextSubsegments: subsegments,
-    ttsSegments,
-    resultsSoFar: firstPass,
-    minMatchLength: 15,
-    levenshteinThreshold,
-    passNumber: passNumber++,
-    normalizeBaseTextSubsegment,
-    normalizeTtsSegment,
-  })
-  for (let i = 3; i <= levenshteinThreshold; i++) {
-    increasingLevenshteinThreshold = continueFindingMatches({
+  // these numbers would be adjusted for different languages.
+  // just doing Japanese for now.
+  const passesConfig = [
+    { minMatchLength: 15, levenshteinThreshold: 0 },
+    { minMatchLength: 14, levenshteinThreshold: 0 },
+    { minMatchLength: 13, levenshteinThreshold: 0 },
+    { minMatchLength: 11, levenshteinThreshold: 0 },
+    { minMatchLength: 11, levenshteinThreshold: 0 },
+    { minMatchLength: 10, levenshteinThreshold: 0 },
+    { minMatchLength: 9, levenshteinThreshold: 0 },
+    { minMatchLength: 8, levenshteinThreshold: 0 },
+    { minMatchLength: 7, levenshteinThreshold: 0 },
+    { minMatchLength: 6, levenshteinThreshold: 0 },
+    //
+    { minMatchLength: 15, levenshteinThreshold: 1 },
+    { minMatchLength: 14, levenshteinThreshold: 1 },
+    { minMatchLength: 13, levenshteinThreshold: 1 },
+    { minMatchLength: 12, levenshteinThreshold: 1 },
+    { minMatchLength: 11, levenshteinThreshold: 1 },
+    { minMatchLength: 10, levenshteinThreshold: 1 },
+    { minMatchLength: 9, levenshteinThreshold: 1 },
+    { minMatchLength: 8, levenshteinThreshold: 1 },
+    { minMatchLength: 7, levenshteinThreshold: 1 },
+    { minMatchLength: 6, levenshteinThreshold: 1 },
+    //
+    { minMatchLength: 15, levenshteinThreshold: 2 },
+    { minMatchLength: 14, levenshteinThreshold: 2 },
+    { minMatchLength: 13, levenshteinThreshold: 2 },
+    { minMatchLength: 12, levenshteinThreshold: 2 },
+    { minMatchLength: 11, levenshteinThreshold: 2 },
+    { minMatchLength: 10, levenshteinThreshold: 2 },
+    { minMatchLength: 9, levenshteinThreshold: 2 },
+    { minMatchLength: 8, levenshteinThreshold: 2 },
+    { minMatchLength: 7, levenshteinThreshold: 2 },
+    { minMatchLength: 6, levenshteinThreshold: 2 },
+    { minMatchLength: 5, levenshteinThreshold: 2 },
+    //
+    { minMatchLength: 15, levenshteinThreshold: 3 },
+    { minMatchLength: 14, levenshteinThreshold: 3 },
+    { minMatchLength: 13, levenshteinThreshold: 3 },
+    { minMatchLength: 12, levenshteinThreshold: 3 },
+    { minMatchLength: 11, levenshteinThreshold: 3 },
+    { minMatchLength: 10, levenshteinThreshold: 3 },
+    { minMatchLength: 9, levenshteinThreshold: 3 },
+    { minMatchLength: 8, levenshteinThreshold: 3 },
+    //
+    { minMatchLength: 4, levenshteinThreshold: 1 },
+    { minMatchLength: 3, levenshteinThreshold: 1 },
+    { minMatchLength: 2, levenshteinThreshold: 1 },
+  ]
+
+  for (const { minMatchLength, levenshteinThreshold } of passesConfig) {
+    latestPass = continueFindingMatches({
       baseTextSegments,
       baseTextSubsegments: subsegments,
       ttsSegments,
-      resultsSoFar: increasingLevenshteinThreshold,
-      minMatchLength: 5,
-      levenshteinThreshold: i,
-      passNumber: passNumber++,
-      normalizeBaseTextSubsegment,
-      normalizeTtsSegment,
+      resultsSoFar: latestPass,
+      minMatchLength,
+      levenshteinThreshold,
+      passNumber: ++passNumber,
     })
   }
 
-  const minMatchLength = 1
-  let decreasingMatchLength = continueFindingMatches({
-    baseTextSegments,
-    baseTextSubsegments: subsegments,
-    ttsSegments,
-    resultsSoFar: increasingLevenshteinThreshold,
-    minMatchLength,
-    levenshteinThreshold: 2,
-    passNumber,
-    normalizeBaseTextSubsegment,
-    normalizeTtsSegment,
-  })
-  for (let i = 10; i >= minMatchLength; i--) {
-    decreasingMatchLength = continueFindingMatches({
-      baseTextSegments,
-      baseTextSubsegments: subsegments,
-      ttsSegments,
-      resultsSoFar: decreasingMatchLength,
-      minMatchLength: i,
-      levenshteinThreshold: 2,
-      passNumber: passNumber++,
-      normalizeBaseTextSubsegment,
-      normalizeTtsSegment,
-    })
-  }
+  // at this point, only a small portion of unmatched regions remain.
+  // within these regions, now we can try combining adjacent segments
+  // and seeing how that affects levenshtein distance.
+  //
+  // one kind of easy case
+  // is when there are no TTS segments in an unmatched region
+  // and a short word or two is left straggling in the base text.
+  // in this case, we can often find which matched segment
+  // before or after has a improved levenshtein distance
+  // if we combine the unmatched segment with the matched one.
+  //
+  //
+  // finally, all unmatched regions will probably be very short,
+  // so they will likely be already aligned, with either
+  // strange spelling in the base text or inaccurate TTS results.
 
-  return decreasingMatchLength
+  return latestPass
 }
 function defaultNormalize(text: string): string {
   return (
     text
-      .replace(/[\s。？」、！』]+/g, '')
+      .replace(/[\s。？」、！』―]+/g, '')
       // replace katakana with hiragana
       .replace(/[\u30A1-\u30F6]/g, (match) => String.fromCharCode(match.charCodeAt(0) - 96))
+      // replace Chinese numerals with Arabic numerals
+      .replace(/[\u4E00-\u9FA5]/g, (match) => {
+        const charCode = match.charCodeAt(0)
+        if (charCode >= 0x4e00 && charCode <= 0x9fa5) {
+          // Convert Chinese numeral to Arabic numeral
+          return String.fromCharCode(charCode - 0x4e00 + 0x0030)
+        }
+        return match
+      })
       .trim()
       .toLowerCase()
   )
@@ -146,7 +183,7 @@ function defaultNormalize(text: string): string {
 export function preprocessBaseTextSegments(
   baseTextSegments: BaseTextSegment[],
   baseTextSubsegmenter: RegExp,
-  normalizeBaseTextSubsegment,
+  normalizeBaseTextSubsegment: (text: string) => string,
 ): BaseTextSubsegment[] {
   let subsegmentIndex = 0
   return baseTextSegments.flatMap((segment): BaseTextSubsegment[] => {
@@ -276,8 +313,6 @@ function continueFindingMatches(options: {
   minMatchLength: number
   levenshteinThreshold: number
   passNumber?: number
-  normalizeBaseTextSubsegment: (text: string) => string
-  normalizeTtsSegment: (text: string) => string
 }) {
   const {
     baseTextSegments,
@@ -286,8 +321,6 @@ function continueFindingMatches(options: {
     resultsSoFar,
     minMatchLength,
     levenshteinThreshold,
-    normalizeBaseTextSubsegment,
-    normalizeTtsSegment,
     passNumber = 1,
   } = options
 
