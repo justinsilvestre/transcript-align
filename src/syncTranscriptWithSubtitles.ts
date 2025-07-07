@@ -1,276 +1,430 @@
 import * as levenshtein from 'fast-levenshtein'
-import { analyzeTranscript, AnalyzedTranscript, TranscriptAtomIndex, TranscriptSegmentInput } from './analyzeTranscript'
 import { findIndexBetween } from './findIndexBetween'
-import { last } from './last'
-
-type SubtitlesChunk = {
+type BaseTextSegment = {
+  index: number
   text: string
+}
+type BaseTextSubsegment = {
+  /** index of BaseTextSegment */
+  segmentIndex: number
+  /** index of the subsegment within the BaseTextSegment */
+  indexInSource: number
+  /** index with respect to all BaseTextSubsegments */
+  subsegmentIndex: number
+  text: string
+  normalizedText: string
+}
+type TextToSpeechSegment = {
+  text: string
+  normalizedText: string
   index: number
 }
 
-export type SegmentChunkMatch = {
-  /** always at least one present */
-  transcriptAtomIndexes: TranscriptAtomIndex[]
-  /** always at least one present */
-  subtitlesChunkIndexes: number[]
-  matched: true
-}
-export type Unmatched = {
-  transcriptAtomIndexes: TranscriptAtomIndex[]
-  subtitlesChunkIndexes: number[]
-  matched: false
-}
+type UnnormalizedTextToSpeechSegment = Omit<TextToSpeechSegment, 'normalizedText'>
 
-export type Options = {
-  transcriptSegmenters: RegExp
-  segmentationFirstPassAnchorLength: number
-}
-
-// const NON_LETTERS_DIGITS_WHITESPACE_OR_END = /[\p{L}\p{N}]+[\s\p{L}\p{N}]*([^\p{L}\p{N}]+|$)/gu
-const NON_LETTERS_DIGITS_WHITESPACE_OR_END =
-  /[^\s。？」、！』]+[\s。？、！」』]+|[^\s。？」、！』]+[\s。？、！」』]+?$/gu
-const NON_LETTERS_DIGITS = /[^\p{L}\p{N}]/gu
-
-export const defaultOptions = {
-  transcriptSegmenters: NON_LETTERS_DIGITS_WHITESPACE_OR_END,
-  segmentationFirstPassAnchorLength: 15,
-}
-
-export type SyncedTranscriptAndSubtitles = ReturnType<typeof syncTranscriptWithSubtitles>
-
-export function syncTranscriptWithSubtitles(
-  transcriptInput: TranscriptSegmentInput[],
-  subtitlesChunks: SubtitlesChunk[],
-  givenOptions: Options = defaultOptions,
-) {
-  const options = {
-    ...defaultOptions,
-    ...givenOptions,
+export type BaseTextSubsegmentMatchResult = MatchedBaseTextSubsegment | UnmatchedBaseTextSubsegment
+export type MatchedBaseTextSubsegment = {
+  baseTextSubsegmentIndex: number
+  baseTextSegmentIndex: number
+  ttsSegmentIndex: number
+  matchParameters: {
+    passNumber: number
+    minMatchLength: number
+    levenshteinThreshold: number
   }
+}
+export type UnmatchedBaseTextSubsegment = {
+  baseTextSubsegmentIndex: number
+  baseTextSegmentIndex: number
+  ttsSegmentIndex: null
+}
 
-  const analyzedTranscript = analyzeTranscript(transcriptInput, options.transcriptSegmenters)
+export function syncTranscriptWithSubtitles(options: {
+  /** the base text already segmented (e.g. according to a bilingual alignment) */
+  baseTextSegments: BaseTextSegment[]
+  /** segments of automatic text-to-speech output, from which timing can be derived */
+  ttsSegments: UnnormalizedTextToSpeechSegment[]
+  /** a regular expression for breaking base text segments into smaller chunks
+   * which can be matched against subtitles */
+  baseTextSubsegmenter: RegExp
+  normalizeBaseTextSubsegment?: (text: string) => string
+  normalizeTtsSegment?: (text: string) => string
+}) {
+  const {
+    baseTextSegments,
+    ttsSegments: ttsSegmentsInput,
+    baseTextSubsegmenter,
+    normalizeBaseTextSubsegment = defaultNormalize,
+    normalizeTtsSegment = defaultNormalize,
+  } = options
+  const ttsSegments: TextToSpeechSegment[] = ttsSegmentsInput.map((segment, index) => ({
+    text: segment.text,
+    normalizedText: normalizeTtsSegment(segment.text),
+    index,
+  }))
+  const subsegments = preprocessBaseTextSegments(baseTextSegments, baseTextSubsegmenter, normalizeBaseTextSubsegment)
+  const firstPass = findMatches({
+    baseTextSubsegments: subsegments,
+    baseTextSegments: baseTextSegments,
+    ttsSegments: ttsSegments,
+    passNumber: 1,
+    minMatchLength: 15,
+    levenshteinThreshold: 2,
+    baseTextSubsegmentsStartIndex: 0,
+    baseTextSubsegmentsEnd: subsegments.length,
+    ttsSegmentsStartIndex: 0,
+    ttsSegmentsEnd: ttsSegments.length,
+  })
 
-  // todo: clean up options--shouldnt be used everywhere now that segmentaiton is done outside
-  const anchorMatches = getAnchorMatches(analyzedTranscript, subtitlesChunks, options)
-
-  const minMatchLength = 10
-  let penultimate = continueMatching(anchorMatches.matches, analyzedTranscript, subtitlesChunks, 10, 2)
-  for (let i = 10; i >= minMatchLength; i--) {
-    penultimate = continueMatching(penultimate.matches, analyzedTranscript, subtitlesChunks, i, 2)
-  }
+  let passNumber = 2
 
   const levenshteinThreshold = 10
-  let final = continueMatching(penultimate.matches, analyzedTranscript, subtitlesChunks, 5, 3)
-  for (let i = 3; i < levenshteinThreshold; i++) {
-    final = continueMatching(final.matches, analyzedTranscript, subtitlesChunks, 5, i)
-  }
-
-  return {
-    ...final,
-    analyzedTranscript,
-  }
-}
-
-export function getAnchorMatches(
-  transcript: AnalyzedTranscript,
-  subtitlesChunks: SubtitlesChunk[],
-  options: { transcriptSegmenters: RegExp; segmentationFirstPassAnchorLength: number } = defaultOptions,
-) {
-  return getProbableMatches(transcript, subtitlesChunks, {
-    minMatchLength: options.segmentationFirstPassAnchorLength,
-    levenshteinThreshold: 2,
-    transcriptAtomsStartIndex: 0,
-    transcriptAtomsEnd: transcript.atoms.length,
-    subtitlesChunksStartIndex: 0,
-    subtitlesChunksEnd: subtitlesChunks.length,
-  })
-}
-
-function continueMatching(
-  prevMatches: SegmentChunkMatch[],
-  analyzedTranscript: AnalyzedTranscript,
-  subtitlesChunks: SubtitlesChunk[],
-  minMatchLength: number,
-  levenshteinThreshold: number,
-) {
-  const matches: SegmentChunkMatch[] = []
-  const unmatched: Unmatched[] = []
-  let i = 0
-  for (const match of prevMatches) {
-    const previousMatch: SegmentChunkMatch | null = prevMatches[i - 1] || null
-    const before = getProbableMatches(analyzedTranscript, subtitlesChunks, {
-      minMatchLength,
-      levenshteinThreshold,
-      transcriptAtomsStartIndex: previousMatch
-        ? last(previousMatch.transcriptAtomIndexes.map((i) => analyzedTranscript.toAbsoluteAtomIndex(i))) + 1
-        : 0,
-      transcriptAtomsEnd: match.transcriptAtomIndexes.map((i) => analyzedTranscript.toAbsoluteAtomIndex(i))[0],
-      subtitlesChunksStartIndex: previousMatch ? last(previousMatch.subtitlesChunkIndexes) + 1 : 0,
-      subtitlesChunksEnd: match.subtitlesChunkIndexes[0],
-    })
-
-    matches.push(...(before?.matches || []), match)
-    unmatched.push(...(before?.unmatched || []))
-
-    i++
-  }
-
-  const lastMatch = last(prevMatches)
-  const unresolvedAtEnd = getProbableMatches(analyzedTranscript, subtitlesChunks, {
-    minMatchLength,
+  let increasingLevenshteinThreshold = continueFindingMatches({
+    baseTextSegments,
+    baseTextSubsegments: subsegments,
+    ttsSegments,
+    resultsSoFar: firstPass,
+    minMatchLength: 15,
     levenshteinThreshold,
-    transcriptAtomsStartIndex:
-      last(lastMatch.transcriptAtomIndexes.map((i) => analyzedTranscript.toAbsoluteAtomIndex(i))) + 1,
-    transcriptAtomsEnd: lastMatch
-      ? analyzedTranscript.toAbsoluteAtomIndex(lastMatch.transcriptAtomIndexes[0])
-      : analyzedTranscript.atoms.length,
-    subtitlesChunksStartIndex: last(lastMatch.subtitlesChunkIndexes) + 1,
-    subtitlesChunksEnd: lastMatch ? lastMatch.subtitlesChunkIndexes[0] : subtitlesChunks.length,
+    passNumber: passNumber++,
+    normalizeBaseTextSubsegment,
+    normalizeTtsSegment,
   })
-  matches.push(...unresolvedAtEnd.matches)
-  unmatched.push(...unresolvedAtEnd.unmatched)
+  for (let i = 3; i <= levenshteinThreshold; i++) {
+    increasingLevenshteinThreshold = continueFindingMatches({
+      baseTextSegments,
+      baseTextSubsegments: subsegments,
+      ttsSegments,
+      resultsSoFar: increasingLevenshteinThreshold,
+      minMatchLength: 5,
+      levenshteinThreshold: i,
+      passNumber: passNumber++,
+      normalizeBaseTextSubsegment,
+      normalizeTtsSegment,
+    })
+  }
 
-  return { matches, unmatched }
+  const minMatchLength = 1
+  let decreasingMatchLength = continueFindingMatches({
+    baseTextSegments,
+    baseTextSubsegments: subsegments,
+    ttsSegments,
+    resultsSoFar: increasingLevenshteinThreshold,
+    minMatchLength,
+    levenshteinThreshold: 2,
+    passNumber,
+    normalizeBaseTextSubsegment,
+    normalizeTtsSegment,
+  })
+  for (let i = 10; i >= minMatchLength; i--) {
+    decreasingMatchLength = continueFindingMatches({
+      baseTextSegments,
+      baseTextSubsegments: subsegments,
+      ttsSegments,
+      resultsSoFar: decreasingMatchLength,
+      minMatchLength: i,
+      levenshteinThreshold: 2,
+      passNumber: passNumber++,
+      normalizeBaseTextSubsegment,
+      normalizeTtsSegment,
+    })
+  }
+
+  return decreasingMatchLength
+}
+function defaultNormalize(text: string): string {
+  return (
+    text
+      .replace(/[\s。？」、！』]+/g, '')
+      // replace katakana with hiragana
+      .replace(/[\u30A1-\u30F6]/g, (match) => String.fromCharCode(match.charCodeAt(0) - 96))
+      .trim()
+      .toLowerCase()
+  )
 }
 
-type GetProbableMatchesOptions = {
+export function preprocessBaseTextSegments(
+  baseTextSegments: BaseTextSegment[],
+  baseTextSubsegmenter: RegExp,
+  normalizeBaseTextSubsegment,
+): BaseTextSubsegment[] {
+  let subsegmentIndex = 0
+  return baseTextSegments.flatMap((segment): BaseTextSubsegment[] => {
+    if (!segment.text)
+      return [
+        {
+          segmentIndex: segment.index,
+          indexInSource: 0,
+          subsegmentIndex: subsegmentIndex++,
+          text: '',
+          normalizedText: '',
+        },
+      ]
+
+    const subsegments = segment.text.match(baseTextSubsegmenter)
+    if (!subsegments) throw new Error(`No matches found for segment: ${segment.text}`)
+    return subsegments.map((text, index) => ({
+      segmentIndex: segment.index,
+      indexInSource: index,
+      subsegmentIndex: subsegmentIndex++,
+      text,
+      normalizedText: normalizeBaseTextSubsegment(text),
+    }))
+  })
+}
+
+export function findMatches(options: {
+  baseTextSubsegments: BaseTextSubsegment[]
+  baseTextSegments: BaseTextSegment[]
+  ttsSegments: TextToSpeechSegment[]
   minMatchLength: number
   levenshteinThreshold: number
-  transcriptAtomsStartIndex: number
-  transcriptAtomsEnd: number
-  subtitlesChunksStartIndex: number
-  subtitlesChunksEnd: number
-}
-
-export function getProbableMatches(
-  transcript: AnalyzedTranscript,
-  subtitlesChunks: SubtitlesChunk[],
-  options: GetProbableMatchesOptions,
-) {
-  let first: SegmentChunkMatch | Unmatched | null = null
+  passNumber: number
+  baseTextSubsegmentsStartIndex: number
+  baseTextSubsegmentsEnd: number
+  ttsSegmentsStartIndex: number
+  ttsSegmentsEnd: number
+}) {
   const {
+    baseTextSubsegments,
+    baseTextSegments,
+    ttsSegments,
     minMatchLength,
     levenshteinThreshold,
-    transcriptAtomsStartIndex,
-    transcriptAtomsEnd,
-    subtitlesChunksStartIndex,
-    subtitlesChunksEnd,
+    passNumber,
+    baseTextSubsegmentsStartIndex,
+    baseTextSubsegmentsEnd,
+    ttsSegmentsStartIndex,
+    ttsSegmentsEnd,
   } = options
-  const matches: SegmentChunkMatch[] = []
-  const unmatched: Unmatched[] = []
-
-  let searchStartIndex = subtitlesChunksStartIndex
-
-  for (let index = transcriptAtomsStartIndex; index < transcriptAtomsEnd; index++) {
-    const { text: segment } = transcript.atoms[index]
-
-    const normalizedSegment = normalizeText(segment)
-    if (normalizedSegment.length >= minMatchLength) {
-      const subtitlesChunkMatchIndex = findIndexBetween(
-        subtitlesChunks,
-        searchStartIndex,
-        subtitlesChunksEnd,
-        ({ text }) => {
-          const normalizedSubtitlesChunkSegment = normalizeText(text)
-          const distance = levenshtein.get(normalizedSegment, normalizedSubtitlesChunkSegment)
-          return distance <= levenshteinThreshold
-        },
-      )
-
-      const matchFound = subtitlesChunkMatchIndex !== -1
-
-      if (matchFound) {
-        // immediately flag the matched subtitleschunks as already processed
-        searchStartIndex = subtitlesChunkMatchIndex + 1
-        const previousMatch = matches[matches.length - 1]
-        const match: SegmentChunkMatch = {
-          transcriptAtomIndexes: [transcript.atoms[index].index],
-          subtitlesChunkIndexes: [subtitlesChunkMatchIndex],
-          matched: true,
-        }
-
-        const priorUnmatchedSegmentsStartIndex = previousMatch
-          ? transcript.toAbsoluteAtomIndex(last(previousMatch.transcriptAtomIndexes)) + 1
-          : transcriptAtomsStartIndex
-        const priorUnmatchedChunksStartIndex = previousMatch
-          ? last(previousMatch.subtitlesChunkIndexes) + 1
-          : subtitlesChunksStartIndex
-        const unresolvedSegmentsBeforeMatch = transcript.atoms.slice(
-          // todo: what if emtpy?
-          priorUnmatchedSegmentsStartIndex,
-          transcript.toAbsoluteAtomIndex(match.transcriptAtomIndexes[0]),
-        )
-        const unresolvedChunksBeforeMatch = subtitlesChunks.slice(
-          priorUnmatchedChunksStartIndex,
-          match.subtitlesChunkIndexes[0],
-        )
-        if (unresolvedSegmentsBeforeMatch.length || unresolvedChunksBeforeMatch.length) {
-          if (
-            unresolvedSegmentsBeforeMatch.length &&
-            unresolvedChunksBeforeMatch.length &&
-            (unresolvedSegmentsBeforeMatch.length === 1 || unresolvedChunksBeforeMatch.length === 1)
-          ) {
-            const newMatch: SegmentChunkMatch = {
-              transcriptAtomIndexes: unresolvedSegmentsBeforeMatch.map((s) => s.index),
-              subtitlesChunkIndexes: unresolvedChunksBeforeMatch.map((c) => c.index),
-              matched: true,
-            }
-            if (!matches.length && !unmatched.length) first = newMatch
-            matches.push(newMatch)
-          } else {
-            const unmatchedBefore: Unmatched = {
-              transcriptAtomIndexes: unresolvedSegmentsBeforeMatch.map((s) => s.index),
-              subtitlesChunkIndexes: unresolvedChunksBeforeMatch.map((c) => c.index),
-              matched: false,
-            }
-            if (!matches.length && !unmatched.length) first = unmatchedBefore
-            unmatched.push(unmatchedBefore)
-          }
-        }
-
-        if (!matches.length && !unmatched.length) first = match
-        matches.push(match)
-      }
-    }
+  const matchParameters = {
+    minMatchLength,
+    levenshteinThreshold,
+    passNumber,
   }
 
-  const lastMatch: SegmentChunkMatch | null = last(matches) || null
-  const unprocessedSegmentsStartIndex = lastMatch
-    ? transcript.toAbsoluteAtomIndex(last(lastMatch.transcriptAtomIndexes)) + 1
-    : transcriptAtomsStartIndex
-  const unprocessedChunksStartIndex = lastMatch ? last(lastMatch.subtitlesChunkIndexes) + 1 : subtitlesChunksStartIndex
-  const unresolvedSegmentsAfterMatches = transcript.atoms.slice(unprocessedSegmentsStartIndex, transcriptAtomsEnd)
-  const unresolvedChunksAfterMatches = subtitlesChunks.slice(unprocessedChunksStartIndex, subtitlesChunksEnd)
-  if (unresolvedSegmentsAfterMatches.length || unresolvedChunksAfterMatches.length) {
-    if (
-      unresolvedSegmentsAfterMatches.length &&
-      unresolvedChunksAfterMatches.length &&
-      (unresolvedSegmentsAfterMatches.length === 1 || unresolvedChunksAfterMatches.length === 1)
-    ) {
-      matches.push({
-        transcriptAtomIndexes: unresolvedSegmentsAfterMatches.map((s) => s.index),
-        subtitlesChunkIndexes: unresolvedChunksAfterMatches.map((c) => c.index),
-        matched: true,
+  const results: BaseTextSubsegmentMatchResult[] = []
+
+  let searchStartIndex = ttsSegmentsStartIndex
+
+  for (
+    let baseTextSubsegmentIndex = baseTextSubsegmentsStartIndex;
+    baseTextSubsegmentIndex < baseTextSubsegmentsEnd;
+    baseTextSubsegmentIndex++
+  ) {
+    const subsegment = baseTextSubsegments[baseTextSubsegmentIndex]
+    if (!subsegment) {
+      console.warn(
+        `No base text subsegment found at index ${baseTextSubsegmentIndex}, skipping. length of baseTextSubsegments: ${baseTextSubsegments.length}`,
+      )
+      continue
+    }
+    const normalizedSubsegmentText = subsegment.normalizedText
+    const ttsSegmentMatchIndex =
+      normalizedSubsegmentText.length >= minMatchLength
+        ? findIndexBetween(ttsSegments, searchStartIndex, ttsSegmentsEnd, (ttsSegment) => {
+            const normalizedTtsSegmentText = ttsSegment.normalizedText
+            const distance = levenshtein.get(normalizedSubsegmentText, normalizedTtsSegmentText)
+            return distance <= levenshteinThreshold
+          })
+        : -1
+
+    const matchFound = ttsSegmentMatchIndex !== -1
+
+    if (matchFound) {
+      // immediately flag the matched TTS segment as already processed
+      searchStartIndex = ttsSegmentMatchIndex + 1
+      results.push({
+        baseTextSubsegmentIndex: subsegment.subsegmentIndex,
+        baseTextSegmentIndex: subsegment.segmentIndex,
+        ttsSegmentIndex: ttsSegments[ttsSegmentMatchIndex].index,
+        matchParameters,
       })
     } else {
-      const unmatchedAfter: Unmatched = {
-        matched: false,
-        transcriptAtomIndexes: unresolvedSegmentsAfterMatches.map((s) => s.index),
-        subtitlesChunkIndexes: unresolvedChunksAfterMatches.map((s) => s.index),
-      }
-      unmatched.push(unmatchedAfter)
+      results.push({
+        baseTextSubsegmentIndex: subsegment.subsegmentIndex,
+        baseTextSegmentIndex: subsegment.segmentIndex,
+        ttsSegmentIndex: null,
+      })
     }
   }
 
   return {
-    matches,
-    unmatched,
+    results,
+    getBaseTextSubsegmentText: (sourceIndex: number, index: number) => {
+      const subsegment = baseTextSubsegments.find((s) => s.segmentIndex === sourceIndex && s.indexInSource === index)
+      if (!subsegment) throw new Error(`No base text subsegment found at sourceIndex ${sourceIndex}, index ${index}`)
+      return subsegment.text
+    },
+    getTtsSegmentText: (index: number) => {
+      const ttsSegment = ttsSegments[index]
+      if (!ttsSegment) throw new Error(`No TTS segment found at index ${index}`)
+      return ttsSegment.text
+    },
   }
 }
 
-function normalizeText(text: string) {
-  return text
-    .replace(NON_LETTERS_DIGITS, '')
-    .replace(/[\s\n]+/, ' ')
-    .trim()
+function continueFindingMatches(options: {
+  baseTextSegments: BaseTextSegment[]
+  baseTextSubsegments: BaseTextSubsegment[]
+  ttsSegments: TextToSpeechSegment[]
+  resultsSoFar: {
+    results: BaseTextSubsegmentMatchResult[]
+    getBaseTextSubsegmentText: (sourceIndex: number, index: number) => string
+    getTtsSegmentText: (index: number) => string
+  }
+  minMatchLength: number
+  levenshteinThreshold: number
+  passNumber?: number
+  normalizeBaseTextSubsegment: (text: string) => string
+  normalizeTtsSegment: (text: string) => string
+}) {
+  const {
+    baseTextSegments,
+    baseTextSubsegments,
+    ttsSegments,
+    resultsSoFar,
+    minMatchLength,
+    levenshteinThreshold,
+    normalizeBaseTextSubsegment,
+    normalizeTtsSegment,
+    passNumber = 1,
+  } = options
+
+  const newMatchResults: BaseTextSubsegmentMatchResult[] = []
+
+  const regions = getRegionsByMatchStatus(resultsSoFar)
+  let regionIndex = 0
+  for (const region of regions) {
+    if (region.isMatching) {
+      for (const match of region.results || []) {
+        newMatchResults.push(match)
+      }
+    } else {
+      const previousRegion = regions[regionIndex - 1]
+      if (previousRegion && !previousRegion.isMatching)
+        throw new Error('Cannot continue finding matches without a matching region before an unmatched one.')
+      const nextRegion = regions[regionIndex + 1]
+      if (nextRegion && !nextRegion.isMatching)
+        throw new Error('Cannot continue finding matches without a matching region after an unmatched one.')
+      const { results } = findMatches({
+        baseTextSubsegments: baseTextSubsegments,
+        baseTextSegments: baseTextSegments,
+        ttsSegments: ttsSegments,
+        minMatchLength,
+        levenshteinThreshold,
+        passNumber,
+        baseTextSubsegmentsStartIndex: region.subsegments.start,
+        baseTextSubsegmentsEnd: region.subsegments.end,
+        ttsSegmentsStartIndex: previousRegion ? previousRegion.ttsSegments.end : 0,
+        ttsSegmentsEnd: nextRegion ? nextRegion.ttsSegments.start : ttsSegments.length,
+      })
+      newMatchResults.push(...results)
+    }
+    regionIndex++
+  }
+  return {
+    results: newMatchResults,
+    getBaseTextSubsegmentText: resultsSoFar.getBaseTextSubsegmentText,
+    getTtsSegmentText: resultsSoFar.getTtsSegmentText,
+  }
+}
+
+/** Uses BaseTextSubsegment absolute indexes */
+type MatchStatusRegion =
+  | {
+      subsegments: { start: number; end: number }
+      ttsSegments: { start: number; end: number }
+      isMatching: true
+      results: MatchedBaseTextSubsegment[]
+    }
+  | {
+      subsegments: { start: number; end: number }
+      ttsSegments: { start: number; end: number }
+      isMatching: false
+      results: UnmatchedBaseTextSubsegment[]
+    }
+
+function isMatch(result: BaseTextSubsegmentMatchResult): result is MatchedBaseTextSubsegment {
+  return result.ttsSegmentIndex !== null
+}
+
+export function getRegionsByMatchStatus(results: {
+  results: BaseTextSubsegmentMatchResult[]
+  getBaseTextSubsegmentText: (sourceIndex: number, index: number) => string
+  getTtsSegmentText: (index: number) => string
+}) {
+  const regions: MatchStatusRegion[] = []
+
+  for (let i = 0; i < results.results.length; i++) {
+    const previousResult = results.results[i - 1]
+    const currentResult = results.results[i]
+    if (!previousResult) {
+      regions.push(
+        isMatch(currentResult)
+          ? {
+              subsegments: {
+                start: currentResult.baseTextSubsegmentIndex,
+                end: currentResult.baseTextSubsegmentIndex + 1,
+              },
+              ttsSegments: { start: currentResult.ttsSegmentIndex, end: currentResult.ttsSegmentIndex + 1 },
+              isMatching: true,
+              results: [currentResult],
+            }
+          : {
+              subsegments: {
+                start: currentResult.baseTextSubsegmentIndex,
+                end: currentResult.baseTextSubsegmentIndex + 1,
+              },
+              ttsSegments: { start: -1, end: -1 }, // to be filled in below
+              isMatching: false,
+              results: [currentResult],
+            },
+      )
+    } else if (isMatch(currentResult)) {
+      const currentRegion = regions[regions.length - 1]
+      if (currentRegion.isMatching) {
+        currentRegion.subsegments.end = currentResult.baseTextSubsegmentIndex + 1
+        currentRegion.ttsSegments.end = currentResult.ttsSegmentIndex + 1
+        currentRegion.results.push(currentResult)
+      } else {
+        regions.push({
+          subsegments: {
+            start: currentResult.baseTextSubsegmentIndex,
+            end: currentResult.baseTextSubsegmentIndex + 1,
+          },
+          ttsSegments: { start: currentResult.ttsSegmentIndex, end: currentResult.ttsSegmentIndex + 1 },
+          isMatching: true,
+          results: [currentResult],
+        })
+      }
+    } else {
+      const currentRegion = regions[regions.length - 1]
+      if (currentRegion.isMatching) {
+        regions.push({
+          subsegments: {
+            start: currentResult.baseTextSubsegmentIndex,
+            end: currentResult.baseTextSubsegmentIndex + 1,
+          },
+          ttsSegments: { start: -1, end: -1 }, // to be filled in below
+          isMatching: false,
+          results: [currentResult],
+        })
+      } else {
+        currentRegion.subsegments.end = currentResult.baseTextSubsegmentIndex + 1
+        currentRegion.results.push(currentResult)
+      }
+    }
+  }
+
+  for (let i = 0; i < regions.length; i++) {
+    const region = regions[i]
+    if (region.isMatching) continue
+    const previousRegion = regions[i - 1]
+    const nextRegion = regions[i + 1]
+    region.ttsSegments.start = previousRegion ? previousRegion.ttsSegments.end : 0
+    region.ttsSegments.end = nextRegion ? nextRegion.ttsSegments.start : results.getTtsSegmentText.length
+  }
+
+  return regions
 }

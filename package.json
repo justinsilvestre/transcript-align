@@ -9,7 +9,7 @@
     "build": "tsc",
     "format": "prettier --write \"src/**/*.ts\" \"src/**/*.js\"",
     "lint": "tslint -p tsconfig.json",
-    "test": "vitest"
+    "test": "vitest ."
   },
   "devDependencies": {
     "typescript": "^5.3.3",
