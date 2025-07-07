@@ -1,22 +1,26 @@
 import { syncTranscriptWithSubtitles, getAnchorMatches, defaultOptions } from './syncTranscriptWithSubtitles'
 import { analyzeTranscript } from './analyzeTranscript'
-import { rashomon, rashomonSrt } from './rashomon'
+import { rashomonOriginalText } from './testData/rashomonOriginalText'
+import { rashomonSrt } from './testData/rashomonSrt'
 import { parseSync } from 'subtitle'
 import { describe, it, expect } from 'vitest'
 
-const singleTranscriptSegmentInput = (text: string) => [{ text: rashomon, translation: '', index: 0 }]
+const singleTranscriptSegmentInput = (text: string) => [{ text: rashomonOriginalText, translation: '', index: 0 }]
 
 describe('analyzeTranscript', () => {
   it('returns faithful transcript segments', () => {
-    const cues = analyzeTranscript(singleTranscriptSegmentInput(rashomon), defaultOptions.transcriptSegmenters).atoms
+    const cues = analyzeTranscript(
+      singleTranscriptSegmentInput(rashomonOriginalText),
+      defaultOptions.transcriptSegmenters,
+    ).atoms
 
-    expect(cues.map((c) => c.text).join('')).toEqual(rashomon)
+    expect(cues.map((c) => c.text).join('')).toEqual(rashomonOriginalText)
   })
 })
 
 describe('getAnchorMatches', () => {
   it('gets a reasonable number of matches', () => {
-    const transcript = rashomon
+    const transcript = rashomonOriginalText
     const segments = singleTranscriptSegmentInput(transcript)
     const analyzedTranscript = analyzeTranscript(segments, defaultOptions.transcriptSegmenters)
     const chunks = parseSync(rashomonSrt).map((n, i) => ({
@@ -32,7 +36,7 @@ describe('getAnchorMatches', () => {
 })
 
 describe('getCuesForTranscript', () => {
-  const transcript = rashomon
+  const transcript = rashomonOriginalText
   const segmentsInput = singleTranscriptSegmentInput(transcript)
   const analyzedTranscript = analyzeTranscript(segmentsInput, defaultOptions.transcriptSegmenters)
   const chunks = parseSync(rashomonSrt).map((n, i) => ({

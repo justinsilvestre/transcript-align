@@ -1,14 +1,7 @@
 import * as fs from 'fs'
 import { parseSync, stringifySync, NodeCue, NodeList, Node } from 'subtitle'
-import { findIndexBetween } from './findIndexBetween'
-import {
-  syncTranscriptWithSubtitles,
-  SegmentChunkMatch,
-  Unmatched,
-  SyncedTranscriptAndSubtitles,
-} from './syncTranscriptWithSubtitles'
+import { SegmentChunkMatch, Unmatched, SyncedTranscriptAndSubtitles } from './syncTranscriptWithSubtitles'
 import { last } from './last'
-import { rashomon } from './rashomon'
 import { TranscriptSegment } from './analyzeTranscript'
 
 // const transcriptSegments = getCuesForTranscript(transcript, chunks)

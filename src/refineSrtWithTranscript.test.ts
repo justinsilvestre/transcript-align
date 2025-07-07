@@ -1,5 +1,6 @@
 import { refineSrtWithTranscript } from './refineSrtWithTranscript'
-import { rashomon, rashomonSrt } from './rashomon'
+import { rashomonOriginalText } from './testData/rashomonOriginalText'
+import { rashomonSrt } from './testData/rashomonSrt'
 import { syncTranscriptWithSubtitles } from './syncTranscriptWithSubtitles'
 import { parseSync } from 'subtitle'
 import { readFileSync } from 'fs'
@@ -19,7 +20,7 @@ describe('refineSrtWithTranscript', () => {
           index,
         }
       })
-    const transcript = rashomon
+    const transcript = rashomonOriginalText
     const srtText = rashomonSrt
     const srtChunks = parseSync(srtText).map((n, i) => ({
       text: typeof n.data === 'string' ? n.data : n.data.text,
