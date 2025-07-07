@@ -73,7 +73,7 @@ export type TranscriptSegment = {
   atoms: TranscriptAtom[]
 }
 
-/** segment of e.g. an SRT file */
+/** segment of manual transcript */
 export type TranscriptSegmentInput = {
   index: number
   text: string
