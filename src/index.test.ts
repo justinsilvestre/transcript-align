@@ -1,7 +1,7 @@
 import { syncTranscriptWithSubtitles, getAnchorMatches, defaultOptions } from './syncTranscriptWithSubtitles'
 import { analyzeTranscript } from './analyzeTranscript'
-import { rashomonOriginalText } from './testData/rashomonOriginalText'
-import { rashomonSrt } from './testData/rashomonSrt'
+import { rashomonOriginalText } from '../testData/rashomonOriginalText'
+import { rashomonSrt } from '../testData/rashomonSrt'
 import { parseSync } from 'subtitle'
 import { describe, it, expect } from 'vitest'
 
@@ -67,7 +67,7 @@ describe('getCuesForTranscript', () => {
     ).toEqual(parseSync(rashomonSrt).map((s, i) => i))
   })
 
-  it('includes all text segments', () => {
+  it('includes all text between segments/atoms', () => {
     const segments = singleTranscriptSegmentInput(transcript)
     // const analyzedTranscript = analyzeTranscript(segments)
     const actual = [
@@ -81,5 +81,11 @@ describe('getCuesForTranscript', () => {
       .join('')
 
     expect(actual).toEqual(segments.map((s) => s.text).join(''))
+  })
+
+  it('includes all text between atoms/transcript', () => {
+    const transcriptionText = rashomonOriginalText
+    const textFromAtoms = analyzedTranscript.atoms.map((a) => a.text).join('')
+    expect(textFromAtoms).toEqual(transcriptionText)
   })
 })

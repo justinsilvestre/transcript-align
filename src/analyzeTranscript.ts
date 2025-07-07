@@ -1,12 +1,20 @@
 export class AnalyzedTranscript {
   segments: TranscriptSegment[]
+  /** more granular than `segments`, produced according to `segmenter` RegExp. */
   atoms: TranscriptAtom[]
 
   constructor(input: TranscriptSegmentInput[], segmenter: RegExp) {
     let absoluteAtomIndex = 0
-    let segments: TranscriptSegment[] = []
+    const segments: TranscriptSegment[] = []
+    const allAtoms: TranscriptAtom[] = []
 
-    const allAtoms = input.flatMap((segmentInput) => {
+    for (const segmentInput of input) {
+      if (!segmentInput.text) {
+        throw new Error(`Segment at index ${segmentInput.index} has no text`)
+      }
+    }
+
+    for (const segmentInput of input) {
       const segmentAtoms: TranscriptAtom[] = []
       const segment: TranscriptSegment = {
         atoms: segmentAtoms,
@@ -14,24 +22,26 @@ export class AnalyzedTranscript {
         index: segmentInput.index,
         translation: segmentInput.translation,
       }
+
+      const matches = segmentInput.text.matchAll(segmenter)
+
       segments.push(segment)
+      segmentAtoms.push(
+        ...Array.from(matches, (match, relativeIndex) => {
+          const currentAbsoluteIndex = absoluteAtomIndex
+          absoluteAtomIndex += 1
+          return new TranscriptAtom(
+            segment,
+            currentAbsoluteIndex,
+            relativeIndex,
+            match.index as number,
+            ((match.index as number) + match[0].length) as number,
+          )
+        }),
+      )
 
-      const segmentAtomsInitialization = [...segmentInput.text.matchAll(segmenter)].map((match, relativeIndex) => {
-        const currentAbsoluteIndex = absoluteAtomIndex
-        absoluteAtomIndex += 1
-        return new TranscriptAtom(
-          segment,
-          currentAbsoluteIndex,
-          relativeIndex,
-          match.index as number,
-          ((match.index as number) + match[0].length) as number,
-        )
-      })
-
-      segmentAtoms.push(...segmentAtomsInitialization)
-
-      return segmentAtoms
-    })
+      allAtoms.push(...segmentAtoms)
+    }
 
     this.atoms = allAtoms
     this.segments = segments
@@ -63,6 +73,7 @@ export type TranscriptSegment = {
   atoms: TranscriptAtom[]
 }
 
+/** segment of e.g. an SRT file */
 export type TranscriptSegmentInput = {
   index: number
   text: string

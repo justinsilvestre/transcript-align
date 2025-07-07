@@ -1,13 +1,13 @@
 {
   "compilerOptions": {
-    "target": "es5",
-    "lib": ["es2020"],
+    "target": "es2024",
+    "lib": ["es2024"],
     "downlevelIteration": true,
     "module": "commonjs",
     "declaration": true,
     "outDir": "./lib",
     "strict": true
   },
-  "include": ["src"],
+  "include": ["src", "testData"],
   "exclude": ["node_modules", "**/__tests__/*"]
 }

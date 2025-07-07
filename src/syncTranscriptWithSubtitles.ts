@@ -26,7 +26,9 @@ export type Options = {
   segmentationFirstPassAnchorLength: number
 }
 
-const NON_LETTERS_DIGITS_WHITESPACE_OR_END = /[\p{L}\p{N}]+[\s\p{L}\p{N}]*([^\p{L}\p{N}]+|$)/gu
+// const NON_LETTERS_DIGITS_WHITESPACE_OR_END = /[\p{L}\p{N}]+[\s\p{L}\p{N}]*([^\p{L}\p{N}]+|$)/gu
+const NON_LETTERS_DIGITS_WHITESPACE_OR_END =
+  /[^\s。？」、！』]+[\s。？、！」』]+|[^\s。？」、！』]+[\s。？、！」』]+?$/gu
 const NON_LETTERS_DIGITS = /[^\p{L}\p{N}]/gu
 
 export const defaultOptions = {
@@ -57,17 +59,15 @@ export function syncTranscriptWithSubtitles(
     penultimate = continueMatching(penultimate.matches, analyzedTranscript, subtitlesChunks, i, 2)
   }
 
-
   const levenshteinThreshold = 10
   let final = continueMatching(penultimate.matches, analyzedTranscript, subtitlesChunks, 5, 3)
   for (let i = 3; i < levenshteinThreshold; i++) {
     final = continueMatching(final.matches, analyzedTranscript, subtitlesChunks, 5, i)
-
   }
 
   return {
     ...final,
-    analyzedTranscript
+    analyzedTranscript,
   }
 }
 
@@ -102,12 +102,10 @@ function continueMatching(
       minMatchLength,
       levenshteinThreshold,
       transcriptAtomsStartIndex: previousMatch
-        ? last(previousMatch.transcriptAtomIndexes.map(i => analyzedTranscript.toAbsoluteAtomIndex(i))) + 1
+        ? last(previousMatch.transcriptAtomIndexes.map((i) => analyzedTranscript.toAbsoluteAtomIndex(i))) + 1
         : 0,
-      transcriptAtomsEnd: match.transcriptAtomIndexes.map(i => analyzedTranscript.toAbsoluteAtomIndex(i))[0],
-      subtitlesChunksStartIndex: previousMatch
-        ? last(previousMatch.subtitlesChunkIndexes) + 1
-        : 0,
+      transcriptAtomsEnd: match.transcriptAtomIndexes.map((i) => analyzedTranscript.toAbsoluteAtomIndex(i))[0],
+      subtitlesChunksStartIndex: previousMatch ? last(previousMatch.subtitlesChunkIndexes) + 1 : 0,
       subtitlesChunksEnd: match.subtitlesChunkIndexes[0],
     })
 
@@ -119,15 +117,16 @@ function continueMatching(
 
   const lastMatch = last(prevMatches)
   const unresolvedAtEnd = getProbableMatches(analyzedTranscript, subtitlesChunks, {
-        minMatchLength,
-        levenshteinThreshold,
-        transcriptAtomsStartIndex: last(lastMatch.transcriptAtomIndexes.map(i => analyzedTranscript.toAbsoluteAtomIndex(i))) + 1,
-        transcriptAtomsEnd: lastMatch
-          ? analyzedTranscript.toAbsoluteAtomIndex(lastMatch.transcriptAtomIndexes[0])
-          : analyzedTranscript.atoms.length,
-        subtitlesChunksStartIndex: last(lastMatch.subtitlesChunkIndexes)+ 1,
-        subtitlesChunksEnd: lastMatch ? lastMatch.subtitlesChunkIndexes[0] : subtitlesChunks.length,
-      })
+    minMatchLength,
+    levenshteinThreshold,
+    transcriptAtomsStartIndex:
+      last(lastMatch.transcriptAtomIndexes.map((i) => analyzedTranscript.toAbsoluteAtomIndex(i))) + 1,
+    transcriptAtomsEnd: lastMatch
+      ? analyzedTranscript.toAbsoluteAtomIndex(lastMatch.transcriptAtomIndexes[0])
+      : analyzedTranscript.atoms.length,
+    subtitlesChunksStartIndex: last(lastMatch.subtitlesChunkIndexes) + 1,
+    subtitlesChunksEnd: lastMatch ? lastMatch.subtitlesChunkIndexes[0] : subtitlesChunks.length,
+  })
   matches.push(...unresolvedAtEnd.matches)
   unmatched.push(...unresolvedAtEnd.unmatched)
 
@@ -142,7 +141,6 @@ type GetProbableMatchesOptions = {
   subtitlesChunksStartIndex: number
   subtitlesChunksEnd: number
 }
-
 
 export function getProbableMatches(
   transcript: AnalyzedTranscript,
@@ -230,8 +228,8 @@ export function getProbableMatches(
           }
         }
 
-            if (!matches.length && !unmatched.length) first = match
-            matches.push(match)
+        if (!matches.length && !unmatched.length) first = match
+        matches.push(match)
       }
     }
   }
@@ -240,9 +238,7 @@ export function getProbableMatches(
   const unprocessedSegmentsStartIndex = lastMatch
     ? transcript.toAbsoluteAtomIndex(last(lastMatch.transcriptAtomIndexes)) + 1
     : transcriptAtomsStartIndex
-  const unprocessedChunksStartIndex = lastMatch
-    ? last(lastMatch.subtitlesChunkIndexes) + 1
-    : subtitlesChunksStartIndex
+  const unprocessedChunksStartIndex = lastMatch ? last(lastMatch.subtitlesChunkIndexes) + 1 : subtitlesChunksStartIndex
   const unresolvedSegmentsAfterMatches = transcript.atoms.slice(unprocessedSegmentsStartIndex, transcriptAtomsEnd)
   const unresolvedChunksAfterMatches = subtitlesChunks.slice(unprocessedChunksStartIndex, subtitlesChunksEnd)
   if (unresolvedSegmentsAfterMatches.length || unresolvedChunksAfterMatches.length) {
@@ -278,5 +274,3 @@ function normalizeText(text: string) {
     .replace(/[\s\n]+/, ' ')
     .trim()
 }
-
-

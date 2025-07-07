@@ -1,15 +1,15 @@
 import { refineSrtWithTranscript } from './refineSrtWithTranscript'
-import { rashomonOriginalText } from './testData/rashomonOriginalText'
-import { rashomonSrt } from './testData/rashomonSrt'
+import { rashomonOriginalText } from '../testData/rashomonOriginalText'
+import { rashomonSrt } from '../testData/rashomonSrt'
 import { syncTranscriptWithSubtitles } from './syncTranscriptWithSubtitles'
 import { parseSync } from 'subtitle'
-import { readFileSync } from 'fs'
+import { readFileSync, writeFile, writeFileSync } from 'fs'
 import { join } from 'path'
 import { describe, it, expect } from 'vitest'
 
 describe('refineSrtWithTranscript', () => {
   it('tmp', () => {
-    const transcriptSegments = readFileSync(join(__dirname, 'rashomonAlignedImperfect.tsv'), 'utf8')
+    const transcriptSegments = readFileSync(join(__dirname, 'testData', 'rashomonAlignedImperfect.tsv'), 'utf8')
       .split('\n')
       .filter((s) => s.trim())
       .map((line, index) => {
@@ -41,6 +41,20 @@ describe('refineSrtWithTranscript', () => {
             m.transcriptAtomIndexes.map((i) => synced.analyzedTranscript.atomAt(i).text).join('~~'),
         ),
     )
+
+    const splitTrascriptPath = join(__dirname, 'split.txt')
+    writeFileSync(
+      splitTrascriptPath,
+      transcript
+        .split(/([^\n。」]+[。\n」]+)/g)
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .join('\n'),
+      'utf8',
+    )
+
+    const atomsPath = join(__dirname, 'atoms.txt')
+    writeFileSync(atomsPath, synced.analyzedTranscript.atoms.map((a) => a.text).join('\n'), 'utf8')
 
     expect(
       refined
