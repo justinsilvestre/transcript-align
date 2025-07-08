@@ -20,12 +20,14 @@ export function preprocessBaseTextSegments(
 
     const subsegments = segment.text.match(baseTextSubsegmenter)
     if (!subsegments) throw new Error(`No matches found for segment: ${segment.text}`)
-    return subsegments.map((text, index) => ({
-      segmentIndex: segment.index,
-      indexInSource: index,
-      subsegmentIndex: subsegmentIndex++,
-      text,
-      normalizedText: normalizeBaseTextSubsegment(text),
-    }))
+    return subsegments.map(
+      (text, index): BaseTextSubsegment => ({
+        segmentIndex: segment.index,
+        indexInSource: index,
+        subsegmentIndex: subsegmentIndex++,
+        text,
+        normalizedText: normalizeBaseTextSubsegment(text),
+      }),
+    )
   })
 }

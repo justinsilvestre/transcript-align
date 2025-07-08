@@ -1,10 +1,10 @@
 import {
-  BaseTextSubsegmentMatchResult,
-  MatchedBaseTextSubsegment,
+  BaseTextSubsegmentsMatchResult,
+  MatchedBaseTextSubsegments,
   UnmatchedBaseTextSubsegment,
 } from './syncTranscriptWithSubtitles'
 
-export function getRegionsByMatchStatus(results: BaseTextSubsegmentMatchResult[], ttsSegmentsCount: number) {
+export function getRegionsByMatchStatus(results: BaseTextSubsegmentsMatchResult[], ttsSegmentsCount: number) {
   const regions: MatchStatusRegion[] = []
 
   for (let i = 0; i < results.length; i++) {
@@ -15,10 +15,10 @@ export function getRegionsByMatchStatus(results: BaseTextSubsegmentMatchResult[]
         isMatch(currentResult)
           ? {
               subsegments: {
-                start: currentResult.baseTextSubsegmentIndex,
-                end: currentResult.baseTextSubsegmentIndex + 1,
+                start: currentResult.subsegments.start,
+                end: currentResult.subsegments.end,
               },
-              ttsSegments: { start: currentResult.ttsSegmentIndex, end: currentResult.ttsSegmentIndex + 1 },
+              ttsSegments: { start: currentResult.ttsSegments.start, end: currentResult.ttsSegments.end },
               isMatching: true,
               results: [currentResult],
             }
@@ -35,16 +35,16 @@ export function getRegionsByMatchStatus(results: BaseTextSubsegmentMatchResult[]
     } else if (isMatch(currentResult)) {
       const currentRegion = regions[regions.length - 1]
       if (currentRegion.isMatching) {
-        currentRegion.subsegments.end = currentResult.baseTextSubsegmentIndex + 1
-        currentRegion.ttsSegments.end = currentResult.ttsSegmentIndex + 1
+        currentRegion.subsegments.end = currentResult.subsegments.end
+        currentRegion.ttsSegments.end = currentResult.ttsSegments.end
         currentRegion.results.push(currentResult)
       } else {
         regions.push({
           subsegments: {
-            start: currentResult.baseTextSubsegmentIndex,
-            end: currentResult.baseTextSubsegmentIndex + 1,
+            start: currentResult.subsegments.start,
+            end: currentResult.subsegments.end,
           },
-          ttsSegments: { start: currentResult.ttsSegmentIndex, end: currentResult.ttsSegmentIndex + 1 },
+          ttsSegments: { start: currentResult.ttsSegments.start, end: currentResult.ttsSegments.end },
           isMatching: true,
           results: [currentResult],
         })
@@ -85,7 +85,7 @@ export type MatchStatusRegion =
       subsegments: { start: number; end: number }
       ttsSegments: { start: number; end: number }
       isMatching: true
-      results: MatchedBaseTextSubsegment[]
+      results: MatchedBaseTextSubsegments[]
     }
   | {
       subsegments: { start: number; end: number }
@@ -93,6 +93,7 @@ export type MatchStatusRegion =
       isMatching: false
       results: UnmatchedBaseTextSubsegment[]
     }
-function isMatch(result: BaseTextSubsegmentMatchResult): result is MatchedBaseTextSubsegment {
-  return result.ttsSegmentIndex !== null
+
+export function isMatch(result: BaseTextSubsegmentsMatchResult): result is MatchedBaseTextSubsegments {
+  return 'subsegments' in result
 }

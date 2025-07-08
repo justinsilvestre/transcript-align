@@ -1,6 +1,7 @@
 import { getRegionsByMatchStatus, MatchStatusRegion } from './getRegionsByMatchStatus'
 import { preprocessBaseTextSegments } from './preprocessBaseTextSegments'
 import { findMatches, continueFindingMatches } from './findMatches'
+import { toRomaji } from './kanaToRomaji'
 export type BaseTextSegment = {
   index: number
   text: string
@@ -23,11 +24,10 @@ export type TextToSpeechSegment = {
 
 type UnnormalizedTextToSpeechSegment = Omit<TextToSpeechSegment, 'normalizedText'>
 
-export type BaseTextSubsegmentMatchResult = MatchedBaseTextSubsegment | UnmatchedBaseTextSubsegment
-export type MatchedBaseTextSubsegment = {
-  baseTextSubsegmentIndex: number
-  baseTextSegmentIndex: number
-  ttsSegmentIndex: number
+export type BaseTextSubsegmentsMatchResult = MatchedBaseTextSubsegments | UnmatchedBaseTextSubsegment
+export type MatchedBaseTextSubsegments = {
+  subsegments: { start: number; end: number }
+  ttsSegments: { start: number; end: number }
   matchParameters: {
     passNumber: number
     minMatchLength: number
@@ -36,7 +36,6 @@ export type MatchedBaseTextSubsegment = {
 }
 export type UnmatchedBaseTextSubsegment = {
   baseTextSubsegmentIndex: number
-  baseTextSegmentIndex: number
   ttsSegmentIndex: null
 }
 
@@ -204,7 +203,7 @@ export function syncTranscriptWithSubtitles(options: {
 
 function alignRegionEnds(options: {
   regions: MatchStatusRegion[]
-  getBaseTextSubsegmentText: (sourceIndex: number, index: number) => string
+  getBaseTextSubsegmentText: (index: number) => string
   getTtsSegmentText: (index: number) => string
   minMatchLength: number
   levenshteinThreshold: number
@@ -220,7 +219,7 @@ function alignRegionEnds(options: {
     baseTextSubsegments,
     ttsSegments,
   } = options
-  const newResults: BaseTextSubsegmentMatchResult[] = []
+  const newResults: BaseTextSubsegmentsMatchResult[] = []
 
   for (const region of regions) {
     if (region.isMatching) {
@@ -242,6 +241,7 @@ function alignRegionEnds(options: {
     // improves the levenshtein distance.
     // keep doing this for both sides until the levenshtein distance
     // is no longer improved by adding more segments.
+    // then add the matched segments to the results.
 
     // then, start the process again,
     // but this time, start from the end of the region,
@@ -254,8 +254,13 @@ function defaultNormalize(text: string): string {
   return (
     text
       .replace(/[\s。？」、！』―]+/g, '')
-      // replace katakana with hiragana
-      .replace(/[\u30A1-\u30F6]/g, (match) => String.fromCharCode(match.charCodeAt(0) - 96))
+      // // replace katakana with hiragana
+      // .replace(/[\u30A1-\u30F6]/g, (match) => String.fromCharCode(match.charCodeAt(0) - 96))
+      // replace kana with romaji
+      .replace(/[\u3041-\u3096\u30A1-\u30F6]+/g, (match) => {
+        console.log(match, toRomaji(match))
+        return toRomaji(match)
+      })
       // replace Chinese numerals with Arabic numerals
       .replace(/[\u4E00-\u9FA5]/g, (match) => {
         const charCode = match.charCodeAt(0)

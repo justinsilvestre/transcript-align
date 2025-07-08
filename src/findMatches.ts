@@ -5,7 +5,7 @@ import {
   BaseTextSubsegment,
   BaseTextSegment,
   TextToSpeechSegment,
-  BaseTextSubsegmentMatchResult,
+  BaseTextSubsegmentsMatchResult,
 } from './syncTranscriptWithSubtitles'
 
 export function findMatches(options: {
@@ -38,7 +38,7 @@ export function findMatches(options: {
     passNumber,
   }
 
-  const results: BaseTextSubsegmentMatchResult[] = []
+  const results: BaseTextSubsegmentsMatchResult[] = []
 
   let searchStartIndex = ttsSegmentsStartIndex
 
@@ -69,15 +69,20 @@ export function findMatches(options: {
     if (matchFound) {
       searchStartIndex = ttsSegmentMatchIndex + 1
       results.push({
-        baseTextSubsegmentIndex: subsegment.subsegmentIndex,
-        baseTextSegmentIndex: subsegment.segmentIndex,
-        ttsSegmentIndex: ttsSegments[ttsSegmentMatchIndex].index,
+        // baseTextSubsegmentIndex: subsegment.subsegmentIndex,
+        subsegments: {
+          start: subsegment.subsegmentIndex,
+          end: subsegment.subsegmentIndex + 1,
+        },
+        ttsSegments: {
+          start: ttsSegments[ttsSegmentMatchIndex].index,
+          end: ttsSegments[ttsSegmentMatchIndex].index + 1,
+        },
         matchParameters,
       })
     } else {
       results.push({
         baseTextSubsegmentIndex: subsegment.subsegmentIndex,
-        baseTextSegmentIndex: subsegment.segmentIndex,
         ttsSegmentIndex: null,
       })
     }
@@ -85,9 +90,9 @@ export function findMatches(options: {
 
   return {
     results,
-    getBaseTextSubsegmentText: (sourceIndex: number, index: number) => {
-      const subsegment = baseTextSubsegments.find((s) => s.segmentIndex === sourceIndex && s.indexInSource === index)
-      if (!subsegment) throw new Error(`No base text subsegment found at sourceIndex ${sourceIndex}, index ${index}`)
+    getBaseTextSubsegmentText: (index: number) => {
+      const subsegment = baseTextSubsegments.find((s) => s.subsegmentIndex === index)
+      if (!subsegment) throw new Error(`No base text subsegment found at index ${index}`)
       return subsegment.text
     },
     getTtsSegmentText: (index: number) => {
@@ -116,7 +121,7 @@ export function continueFindingMatches(options: {
     passNumber = 1,
   } = options
 
-  const newMatchResults: BaseTextSubsegmentMatchResult[] = []
+  const newMatchResults: BaseTextSubsegmentsMatchResult[] = []
 
   let regionIndex = 0
   for (const region of regions) {

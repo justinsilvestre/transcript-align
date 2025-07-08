@@ -3,7 +3,7 @@ import './App.css'
 import { rashomonOriginalText } from '../testData/rashomonOriginalText'
 import { rashomonSrt } from '../testData/rashomonSrt'
 import { alignWithSrt } from './alignWithSrt'
-import { getRegionsByMatchStatus } from './syncTranscriptWithSubtitles'
+import { isMatch } from './getRegionsByMatchStatus'
 
 const App: React.FC = () => {
   const [baseText, setBaseText] = useState<string>(rashomonOriginalText)
@@ -55,12 +55,11 @@ const App: React.FC = () => {
                 <div className="flex-1 p-1 bg-gray-100 rounded">
                   {region.results.map((result, resIndex) => {
                     const baseTextSubsegmentText = getBaseTextSubsegmentText(
-                      result.baseTextSegmentIndex,
-                      result.baseTextSubsegmentIndex,
+                      isMatch(result) ? result.subsegments.start : result.baseTextSubsegmentIndex,
                     )
                     // Highlight color logic
                     let highlight = 'bg-gray-100'
-                    if (result.ttsSegmentIndex != null) {
+                    if (isMatch(result)) {
                       const lev = result.matchParameters.levenshteinThreshold
                       if (lev <= 1) highlight = 'bg-green-50'
                       else if (lev <= 2) highlight = 'bg-green-100'
@@ -72,9 +71,9 @@ const App: React.FC = () => {
                     return (
                       <div key={resIndex} className={`p-1 rounded ${highlight} flex flex-col`}>
                         <span className="">{baseTextSubsegmentText}</span>
-                        {result.ttsSegmentIndex != null && (
+                        {isMatch(result) && (
                           <>
-                            <span className="text-blue-600">{getTtsSegmentText(result.ttsSegmentIndex)}</span>
+                            <span className="text-blue-600">{getTtsSegmentText(result.ttsSegments.start)}</span>
                             <div className="text-green-600 h-[4px] leading-0.5">
                               {Array(result.matchParameters.minMatchLength).fill('•').join('\u00A0\u00A0\u00A0')}
                             </div>
