@@ -39,6 +39,12 @@ export type UnmatchedBaseTextSubsegment = {
   ttsSegmentIndex: null
 }
 
+type AlignmentPassParameters = {
+  passNumber: number
+  minMatchLength: number
+  levenshteinThreshold: number
+}
+
 export function syncTranscriptWithSubtitles(options: {
   /** the base text already segmented (e.g. according to a bilingual alignment) */
   baseTextSegments: BaseTextSegment[]
@@ -64,7 +70,7 @@ export function syncTranscriptWithSubtitles(options: {
   }))
   const subsegments = preprocessBaseTextSegments(baseTextSegments, baseTextSubsegmenter, normalizeBaseTextSubsegment)
 
-  let latestPass = findMatches({
+  const firstPass = findMatches({
     baseTextSubsegments: subsegments,
     baseTextSegments: baseTextSegments,
     ttsSegments: ttsSegments,
@@ -76,6 +82,10 @@ export function syncTranscriptWithSubtitles(options: {
     ttsSegmentsStartIndex: 0,
     ttsSegmentsEnd: ttsSegments.length,
   })
+  let latestPass = {
+    results: firstPass.results,
+    regions: getRegionsByMatchStatus(firstPass.results, ttsSegments.length),
+  }
 
   let passNumber = 1
 
@@ -135,7 +145,8 @@ export function syncTranscriptWithSubtitles(options: {
       baseTextSegments,
       baseTextSubsegments: subsegments,
       ttsSegments,
-      resultsSoFar: latestPass,
+      // resultsSoFar: latestPass,
+      regionsSoFar: latestPass.regions,
       minMatchLength,
       levenshteinThreshold,
       passNumber: ++passNumber,
@@ -145,6 +156,16 @@ export function syncTranscriptWithSubtitles(options: {
   // at this point, only a small portion of unmatched regions remain.
   // within these regions, now we can try combining adjacent segments
   // and seeing how that affects levenshtein distance.
+  //
+  // maybe one way to do it:
+  // start by choosing the *side* (base or tts) of the unmatched region
+  // within which to combine a couple segments within.
+  // you can choose by seeing which combination
+  // produces a more even size for the first segments
+  // in each side.
+  // perhaps you can start from the top, and then the bottom, alternating up and down
+  // since the top and bottom edges are going to be
+  // easier to find fortuitous segment combinations in.
   //
   // one kind of easy case
   // is when there are no TTS segments in an unmatched region
@@ -158,8 +179,24 @@ export function syncTranscriptWithSubtitles(options: {
   // so they will likely be already aligned, with either
   // strange spelling in the base text or inaccurate TTS results.
 
-  return latestPass
+  return {
+    ...latestPass,
+
+    getBaseTextSubsegmentText: firstPass.getBaseTextSubsegmentText,
+    getTtsSegmentText: firstPass.getTtsSegmentText,
+  }
 }
+
+function alignRegionEnds(options: {
+  resultsSoFar: BaseTextSubsegmentMatchResult[]
+  getBaseTextSubsegmentText: (sourceIndex: number, index: number) => string
+  getTtsSegmentText: (index: number) => string
+  minMatchLength: number
+  levenshteinThreshold: number
+}) {
+  //
+}
+
 function defaultNormalize(text: string): string {
   return (
     text
@@ -269,7 +306,6 @@ export function findMatches(options: {
     const matchFound = ttsSegmentMatchIndex !== -1
 
     if (matchFound) {
-      // immediately flag the matched TTS segment as already processed
       searchStartIndex = ttsSegmentMatchIndex + 1
       results.push({
         baseTextSubsegmentIndex: subsegment.subsegmentIndex,
@@ -305,11 +341,8 @@ function continueFindingMatches(options: {
   baseTextSegments: BaseTextSegment[]
   baseTextSubsegments: BaseTextSubsegment[]
   ttsSegments: TextToSpeechSegment[]
-  resultsSoFar: {
-    results: BaseTextSubsegmentMatchResult[]
-    getBaseTextSubsegmentText: (sourceIndex: number, index: number) => string
-    getTtsSegmentText: (index: number) => string
-  }
+
+  regionsSoFar: MatchStatusRegion[]
   minMatchLength: number
   levenshteinThreshold: number
   passNumber?: number
@@ -318,7 +351,7 @@ function continueFindingMatches(options: {
     baseTextSegments,
     baseTextSubsegments,
     ttsSegments,
-    resultsSoFar,
+    regionsSoFar: regions,
     minMatchLength,
     levenshteinThreshold,
     passNumber = 1,
@@ -326,7 +359,6 @@ function continueFindingMatches(options: {
 
   const newMatchResults: BaseTextSubsegmentMatchResult[] = []
 
-  const regions = getRegionsByMatchStatus(resultsSoFar)
   let regionIndex = 0
   for (const region of regions) {
     if (region.isMatching) {
@@ -358,8 +390,7 @@ function continueFindingMatches(options: {
   }
   return {
     results: newMatchResults,
-    getBaseTextSubsegmentText: resultsSoFar.getBaseTextSubsegmentText,
-    getTtsSegmentText: resultsSoFar.getTtsSegmentText,
+    regions: getRegionsByMatchStatus(newMatchResults, ttsSegments.length),
   }
 }
 
@@ -382,16 +413,12 @@ function isMatch(result: BaseTextSubsegmentMatchResult): result is MatchedBaseTe
   return result.ttsSegmentIndex !== null
 }
 
-export function getRegionsByMatchStatus(results: {
-  results: BaseTextSubsegmentMatchResult[]
-  getBaseTextSubsegmentText: (sourceIndex: number, index: number) => string
-  getTtsSegmentText: (index: number) => string
-}) {
+export function getRegionsByMatchStatus(results: BaseTextSubsegmentMatchResult[], ttsSegmentsCount: number) {
   const regions: MatchStatusRegion[] = []
 
-  for (let i = 0; i < results.results.length; i++) {
-    const previousResult = results.results[i - 1]
-    const currentResult = results.results[i]
+  for (let i = 0; i < results.length; i++) {
+    const previousResult = results[i - 1]
+    const currentResult = results[i]
     if (!previousResult) {
       regions.push(
         isMatch(currentResult)
@@ -456,7 +483,7 @@ export function getRegionsByMatchStatus(results: {
     const previousRegion = regions[i - 1]
     const nextRegion = regions[i + 1]
     region.ttsSegments.start = previousRegion ? previousRegion.ttsSegments.end : 0
-    region.ttsSegments.end = nextRegion ? nextRegion.ttsSegments.start : results.getTtsSegmentText.length
+    region.ttsSegments.end = nextRegion ? nextRegion.ttsSegments.start : ttsSegmentsCount
   }
 
   return regions

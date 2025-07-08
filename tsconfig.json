@@ -1,12 +1,17 @@
 {
   "compilerOptions": {
-    "target": "es2024",
-    "lib": ["es2024"],
+    "target": "es2022",
+    "lib": ["es2022", "dom", "dom.iterable"],
     "downlevelIteration": true,
-    "module": "commonjs",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
     "declaration": true,
-    "outDir": "./lib",
-    "strict": true
+    "strict": true,
+    "jsx": "react-jsx",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "skipLibCheck": true
   },
   "include": ["src", "testData"],
   "exclude": ["node_modules", "**/__tests__/*"]
