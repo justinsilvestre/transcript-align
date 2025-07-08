@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { rashomonOriginalText } from '../testData/rashomonOriginalText'
 import { rashomonSrt } from '../testData/rashomonSrt'
-import { findMatches, preprocessBaseTextSegments } from './syncTranscriptWithSubtitles'
+import { findMatches } from './findMatches'
+import { preprocessBaseTextSegments } from './preprocessBaseTextSegments'
 import { defaultNormalize } from './alignWithSrt'
 import { parseSrt } from './srtHelpers'
 

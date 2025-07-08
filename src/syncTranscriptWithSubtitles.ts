@@ -1,10 +1,11 @@
-import * as levenshtein from 'fast-levenshtein'
-import { findIndexBetween } from './findIndexBetween'
-type BaseTextSegment = {
+import { getRegionsByMatchStatus, MatchStatusRegion } from './getRegionsByMatchStatus'
+import { preprocessBaseTextSegments } from './preprocessBaseTextSegments'
+import { findMatches, continueFindingMatches } from './findMatches'
+export type BaseTextSegment = {
   index: number
   text: string
 }
-type BaseTextSubsegment = {
+export type BaseTextSubsegment = {
   /** index of BaseTextSegment */
   segmentIndex: number
   /** index of the subsegment within the BaseTextSegment */
@@ -14,7 +15,7 @@ type BaseTextSubsegment = {
   text: string
   normalizedText: string
 }
-type TextToSpeechSegment = {
+export type TextToSpeechSegment = {
   text: string
   normalizedText: string
   index: number
@@ -179,6 +180,20 @@ export function syncTranscriptWithSubtitles(options: {
   // so they will likely be already aligned, with either
   // strange spelling in the base text or inaccurate TTS results.
 
+  // align the ends of regions here,
+  // something like this:
+  // const afterAligningEnds = alignRegionEnds({
+  //   regions: latestPass.regions,
+  //   getBaseTextSubsegmentText: firstPass.getBaseTextSubsegmentText,
+  //   getTtsSegmentText: firstPass.getTtsSegmentText,
+  //   baseTextSubsegments: subsegments,
+  //   ttsSegments,
+  //   minMatchLength: 15,
+  //   levenshteinThreshold: 2,
+  // })
+  // latestPass.regions = getRegionsByMatchStatus(afterAligningEnds, ttsSegments.length)
+  // latestPass.results = afterAligningEnds
+
   return {
     ...latestPass,
 
@@ -188,13 +203,51 @@ export function syncTranscriptWithSubtitles(options: {
 }
 
 function alignRegionEnds(options: {
-  resultsSoFar: BaseTextSubsegmentMatchResult[]
+  regions: MatchStatusRegion[]
   getBaseTextSubsegmentText: (sourceIndex: number, index: number) => string
   getTtsSegmentText: (index: number) => string
   minMatchLength: number
   levenshteinThreshold: number
+  baseTextSubsegments: BaseTextSubsegment[]
+  ttsSegments: TextToSpeechSegment[]
 }) {
-  //
+  const {
+    regions,
+    getBaseTextSubsegmentText,
+    getTtsSegmentText,
+    minMatchLength,
+    levenshteinThreshold,
+    baseTextSubsegments,
+    ttsSegments,
+  } = options
+  const newResults: BaseTextSubsegmentMatchResult[] = []
+
+  for (const region of regions) {
+    if (region.isMatching) {
+      newResults.push(...region.results)
+      continue
+    }
+    // if the region has just 1 base text subsegment and 1 tts segment,
+    // no need for further processing.
+    if (region.results.length === 1 && region.ttsSegments.start === region.ttsSegments.end - 1) {
+      newResults.push(...region.results)
+      continue
+    }
+
+    // now the previous region is a matching one,
+    // and this region is an unmatched one.
+
+    // get the levenshtein distance between this region's first subsegment and ttsSegment.
+    // then see if adding either the next base text subsegment or the next ttsSegment
+    // improves the levenshtein distance.
+    // keep doing this for both sides until the levenshtein distance
+    // is no longer improved by adding more segments.
+
+    // then, start the process again,
+    // but this time, start from the end of the region,
+  }
+
+  return newResults
 }
 
 function defaultNormalize(text: string): string {
@@ -215,276 +268,4 @@ function defaultNormalize(text: string): string {
       .trim()
       .toLowerCase()
   )
-}
-
-export function preprocessBaseTextSegments(
-  baseTextSegments: BaseTextSegment[],
-  baseTextSubsegmenter: RegExp,
-  normalizeBaseTextSubsegment: (text: string) => string,
-): BaseTextSubsegment[] {
-  let subsegmentIndex = 0
-  return baseTextSegments.flatMap((segment): BaseTextSubsegment[] => {
-    if (!segment.text)
-      return [
-        {
-          segmentIndex: segment.index,
-          indexInSource: 0,
-          subsegmentIndex: subsegmentIndex++,
-          text: '',
-          normalizedText: '',
-        },
-      ]
-
-    const subsegments = segment.text.match(baseTextSubsegmenter)
-    if (!subsegments) throw new Error(`No matches found for segment: ${segment.text}`)
-    return subsegments.map((text, index) => ({
-      segmentIndex: segment.index,
-      indexInSource: index,
-      subsegmentIndex: subsegmentIndex++,
-      text,
-      normalizedText: normalizeBaseTextSubsegment(text),
-    }))
-  })
-}
-
-export function findMatches(options: {
-  baseTextSubsegments: BaseTextSubsegment[]
-  baseTextSegments: BaseTextSegment[]
-  ttsSegments: TextToSpeechSegment[]
-  minMatchLength: number
-  levenshteinThreshold: number
-  passNumber: number
-  baseTextSubsegmentsStartIndex: number
-  baseTextSubsegmentsEnd: number
-  ttsSegmentsStartIndex: number
-  ttsSegmentsEnd: number
-}) {
-  const {
-    baseTextSubsegments,
-    baseTextSegments,
-    ttsSegments,
-    minMatchLength,
-    levenshteinThreshold,
-    passNumber,
-    baseTextSubsegmentsStartIndex,
-    baseTextSubsegmentsEnd,
-    ttsSegmentsStartIndex,
-    ttsSegmentsEnd,
-  } = options
-  const matchParameters = {
-    minMatchLength,
-    levenshteinThreshold,
-    passNumber,
-  }
-
-  const results: BaseTextSubsegmentMatchResult[] = []
-
-  let searchStartIndex = ttsSegmentsStartIndex
-
-  for (
-    let baseTextSubsegmentIndex = baseTextSubsegmentsStartIndex;
-    baseTextSubsegmentIndex < baseTextSubsegmentsEnd;
-    baseTextSubsegmentIndex++
-  ) {
-    const subsegment = baseTextSubsegments[baseTextSubsegmentIndex]
-    if (!subsegment) {
-      console.warn(
-        `No base text subsegment found at index ${baseTextSubsegmentIndex}, skipping. length of baseTextSubsegments: ${baseTextSubsegments.length}`,
-      )
-      continue
-    }
-    const normalizedSubsegmentText = subsegment.normalizedText
-    const ttsSegmentMatchIndex =
-      normalizedSubsegmentText.length >= minMatchLength
-        ? findIndexBetween(ttsSegments, searchStartIndex, ttsSegmentsEnd, (ttsSegment) => {
-            const normalizedTtsSegmentText = ttsSegment.normalizedText
-            const distance = levenshtein.get(normalizedSubsegmentText, normalizedTtsSegmentText)
-            return distance <= levenshteinThreshold
-          })
-        : -1
-
-    const matchFound = ttsSegmentMatchIndex !== -1
-
-    if (matchFound) {
-      searchStartIndex = ttsSegmentMatchIndex + 1
-      results.push({
-        baseTextSubsegmentIndex: subsegment.subsegmentIndex,
-        baseTextSegmentIndex: subsegment.segmentIndex,
-        ttsSegmentIndex: ttsSegments[ttsSegmentMatchIndex].index,
-        matchParameters,
-      })
-    } else {
-      results.push({
-        baseTextSubsegmentIndex: subsegment.subsegmentIndex,
-        baseTextSegmentIndex: subsegment.segmentIndex,
-        ttsSegmentIndex: null,
-      })
-    }
-  }
-
-  return {
-    results,
-    getBaseTextSubsegmentText: (sourceIndex: number, index: number) => {
-      const subsegment = baseTextSubsegments.find((s) => s.segmentIndex === sourceIndex && s.indexInSource === index)
-      if (!subsegment) throw new Error(`No base text subsegment found at sourceIndex ${sourceIndex}, index ${index}`)
-      return subsegment.text
-    },
-    getTtsSegmentText: (index: number) => {
-      const ttsSegment = ttsSegments[index]
-      if (!ttsSegment) throw new Error(`No TTS segment found at index ${index}`)
-      return ttsSegment.text
-    },
-  }
-}
-
-function continueFindingMatches(options: {
-  baseTextSegments: BaseTextSegment[]
-  baseTextSubsegments: BaseTextSubsegment[]
-  ttsSegments: TextToSpeechSegment[]
-
-  regionsSoFar: MatchStatusRegion[]
-  minMatchLength: number
-  levenshteinThreshold: number
-  passNumber?: number
-}) {
-  const {
-    baseTextSegments,
-    baseTextSubsegments,
-    ttsSegments,
-    regionsSoFar: regions,
-    minMatchLength,
-    levenshteinThreshold,
-    passNumber = 1,
-  } = options
-
-  const newMatchResults: BaseTextSubsegmentMatchResult[] = []
-
-  let regionIndex = 0
-  for (const region of regions) {
-    if (region.isMatching) {
-      for (const match of region.results || []) {
-        newMatchResults.push(match)
-      }
-    } else {
-      const previousRegion = regions[regionIndex - 1]
-      if (previousRegion && !previousRegion.isMatching)
-        throw new Error('Cannot continue finding matches without a matching region before an unmatched one.')
-      const nextRegion = regions[regionIndex + 1]
-      if (nextRegion && !nextRegion.isMatching)
-        throw new Error('Cannot continue finding matches without a matching region after an unmatched one.')
-      const { results } = findMatches({
-        baseTextSubsegments: baseTextSubsegments,
-        baseTextSegments: baseTextSegments,
-        ttsSegments: ttsSegments,
-        minMatchLength,
-        levenshteinThreshold,
-        passNumber,
-        baseTextSubsegmentsStartIndex: region.subsegments.start,
-        baseTextSubsegmentsEnd: region.subsegments.end,
-        ttsSegmentsStartIndex: previousRegion ? previousRegion.ttsSegments.end : 0,
-        ttsSegmentsEnd: nextRegion ? nextRegion.ttsSegments.start : ttsSegments.length,
-      })
-      newMatchResults.push(...results)
-    }
-    regionIndex++
-  }
-  return {
-    results: newMatchResults,
-    regions: getRegionsByMatchStatus(newMatchResults, ttsSegments.length),
-  }
-}
-
-/** Uses BaseTextSubsegment absolute indexes */
-type MatchStatusRegion =
-  | {
-      subsegments: { start: number; end: number }
-      ttsSegments: { start: number; end: number }
-      isMatching: true
-      results: MatchedBaseTextSubsegment[]
-    }
-  | {
-      subsegments: { start: number; end: number }
-      ttsSegments: { start: number; end: number }
-      isMatching: false
-      results: UnmatchedBaseTextSubsegment[]
-    }
-
-function isMatch(result: BaseTextSubsegmentMatchResult): result is MatchedBaseTextSubsegment {
-  return result.ttsSegmentIndex !== null
-}
-
-export function getRegionsByMatchStatus(results: BaseTextSubsegmentMatchResult[], ttsSegmentsCount: number) {
-  const regions: MatchStatusRegion[] = []
-
-  for (let i = 0; i < results.length; i++) {
-    const previousResult = results[i - 1]
-    const currentResult = results[i]
-    if (!previousResult) {
-      regions.push(
-        isMatch(currentResult)
-          ? {
-              subsegments: {
-                start: currentResult.baseTextSubsegmentIndex,
-                end: currentResult.baseTextSubsegmentIndex + 1,
-              },
-              ttsSegments: { start: currentResult.ttsSegmentIndex, end: currentResult.ttsSegmentIndex + 1 },
-              isMatching: true,
-              results: [currentResult],
-            }
-          : {
-              subsegments: {
-                start: currentResult.baseTextSubsegmentIndex,
-                end: currentResult.baseTextSubsegmentIndex + 1,
-              },
-              ttsSegments: { start: -1, end: -1 }, // to be filled in below
-              isMatching: false,
-              results: [currentResult],
-            },
-      )
-    } else if (isMatch(currentResult)) {
-      const currentRegion = regions[regions.length - 1]
-      if (currentRegion.isMatching) {
-        currentRegion.subsegments.end = currentResult.baseTextSubsegmentIndex + 1
-        currentRegion.ttsSegments.end = currentResult.ttsSegmentIndex + 1
-        currentRegion.results.push(currentResult)
-      } else {
-        regions.push({
-          subsegments: {
-            start: currentResult.baseTextSubsegmentIndex,
-            end: currentResult.baseTextSubsegmentIndex + 1,
-          },
-          ttsSegments: { start: currentResult.ttsSegmentIndex, end: currentResult.ttsSegmentIndex + 1 },
-          isMatching: true,
-          results: [currentResult],
-        })
-      }
-    } else {
-      const currentRegion = regions[regions.length - 1]
-      if (currentRegion.isMatching) {
-        regions.push({
-          subsegments: {
-            start: currentResult.baseTextSubsegmentIndex,
-            end: currentResult.baseTextSubsegmentIndex + 1,
-          },
-          ttsSegments: { start: -1, end: -1 }, // to be filled in below
-          isMatching: false,
-          results: [currentResult],
-        })
-      } else {
-        currentRegion.subsegments.end = currentResult.baseTextSubsegmentIndex + 1
-        currentRegion.results.push(currentResult)
-      }
-    }
-  }
-
-  for (let i = 0; i < regions.length; i++) {
-    const region = regions[i]
-    if (region.isMatching) continue
-    const previousRegion = regions[i - 1]
-    const nextRegion = regions[i + 1]
-    region.ttsSegments.start = previousRegion ? previousRegion.ttsSegments.end : 0
-    region.ttsSegments.end = nextRegion ? nextRegion.ttsSegments.start : ttsSegmentsCount
-  }
-
-  return regions
 }

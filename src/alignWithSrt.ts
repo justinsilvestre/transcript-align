@@ -19,9 +19,6 @@ function getJapaneseSubsegmenter() {
   return /[^\s。？、！―]+[\s。？、！―]+[」』]*|[^\s。？」、！』―]+[\s。？、！―」』]*$/gu
 }
 
-// TODO:
-// make sure that "この髪を抜いてな" repetition is handled correctly (see generated HTML preview)
-
 const singleTranscriptSegmentInput = (text: string) => [{ text, normalizedText: defaultNormalize(text), index: 0 }]
 export const defaultNormalize = (text: string): string =>
   text
