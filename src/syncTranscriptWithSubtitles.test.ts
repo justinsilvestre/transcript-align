@@ -3,8 +3,14 @@ import { rashomonOriginalText } from '../testData/rashomonOriginalText'
 import { rashomonSrt } from '../testData/rashomonSrt'
 import { findMatches } from './findMatches'
 import { preprocessBaseTextSegments } from './preprocessBaseTextSegments'
-import { defaultNormalize } from './alignWithSrt'
-import { parseSrt } from './srtHelpers'
+import { parseSrtCues } from './srtHelpers'
+import { isMatch } from './getRegionsByMatchStatus'
+
+const defaultNormalize = (text: string): string =>
+  text
+    .replace(/[『「\s。？」、！』―]+/g, '')
+    .trim()
+    .toLowerCase()
 
 describe('findMatches', () => {
   it('gets a reasonable number of matches for first pass', () => {
@@ -21,16 +27,16 @@ describe('findMatches', () => {
       /[^\s。？、！―]+[\s。？、！―]+[」』]*|[^\s。？」、！』―]+[\s。？、！―」』]*$/gu,
       defaultNormalize,
     )
-    const ttsSegments = parseSrt(rashomonSrt).map((n, i) => ({
+    const ttsSegments = parseSrtCues(rashomonSrt).map((n, i) => ({
       text: typeof n.data === 'string' ? n.data : n.data.text,
       index: i,
       normalizedText: defaultNormalize(typeof n.data === 'string' ? n.data : n.data.text),
     }))
-    const { results, getBaseTextSubsegmentText, getTtsSegmentText } = findMatches({
+    const results = findMatches({
       baseTextSubsegments: subsegments,
       baseTextSegments: segments,
       ttsSegments: ttsSegments,
-      passNumber: 1,
+      pass: '`',
       minMatchLength: 15,
       levenshteinThreshold: 2,
       baseTextSubsegmentsStartIndex: 0,
@@ -39,7 +45,7 @@ describe('findMatches', () => {
       ttsSegmentsEnd: ttsSegments.length,
     })
 
-    const matches = results.filter((r) => r.ttsSegmentIndex == null)
+    const matches = results.filter((r) => isMatch(r))
 
     expect(matches).length.greaterThan(10)
   })

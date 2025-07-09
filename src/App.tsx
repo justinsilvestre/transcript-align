@@ -9,7 +9,13 @@ const App: React.FC = () => {
   const [baseText, setBaseText] = useState<string>(rashomonOriginalText)
   const [srtText, setSrtText] = useState<string>(rashomonSrt)
 
-  const { regions, getBaseTextSubsegmentText, getTtsSegmentText } = alignWithSrt(baseText, srtText)
+  const { regions, getBaseTextSubsegmentText, getTtsSegmentText, baseTextSubsegments, results } = alignWithSrt(
+    baseText,
+    srtText,
+  )
+
+  const totalMatches = results.filter((result) => isMatch(result)).length
+  console.log('Total matches:', totalMatches)
 
   return (
     <div className="p-4">
@@ -54,31 +60,50 @@ const App: React.FC = () => {
               <div key={index} className={`flex gap-5 my-1 rounded ${region.isMatching ? '' : 'bg-gray-200'}`}>
                 <div className="flex-1 p-1 bg-gray-100 rounded">
                   {region.results.map((result, resIndex) => {
-                    const baseTextSubsegmentText = getBaseTextSubsegmentText(
+                    const subsegments = getArrayIndices(
                       isMatch(result) ? result.subsegments.start : result.baseTextSubsegmentIndex,
-                    )
-                    // Highlight color logic
-                    let highlight = 'bg-gray-100'
+                      isMatch(result) ? result.subsegments.end : result.baseTextSubsegmentIndex + 1,
+                    ).map((index) => baseTextSubsegments[index])
+
                     if (isMatch(result)) {
-                      const lev = result.matchParameters.levenshteinThreshold
-                      if (lev <= 1) highlight = 'bg-green-50'
-                      else if (lev <= 2) highlight = 'bg-green-100'
-                      else if (lev <= 3) highlight = 'bg-green-200'
-                      else if (lev <= 4) highlight = 'bg-green-300'
-                      else if (lev <= 5) highlight = 'bg-green-400'
-                      else if (lev > 6) highlight = 'bg-gray-100'
+                      let highlight = 'bg-gray-100' // Default highlight color
+                      if (/^\d+$/.test(result.matchParameters.pass)) {
+                        const lev = result.matchParameters.levenshteinThreshold
+                        if (lev <= 1) highlight = 'bg-green-50'
+                        else if (lev <= 2) highlight = 'bg-green-100'
+                        else if (lev <= 3) highlight = 'bg-green-200'
+                        else if (lev <= 4) highlight = 'bg-green-300'
+                        else if (lev <= 5) highlight = 'bg-green-400'
+                        else if (lev <= 6) highlight = 'bg-gray-100'
+                      } else {
+                        if (result.matchParameters.pass === 'topImprovement') highlight = 'bg-blue-100'
+
+                        if (result.matchParameters.pass === 'bottomImprovement') highlight = 'bg-orange-100'
+
+                        if (result.matchParameters.pass === 'straggler') highlight = 'bg-purple-100'
+                      }
+
+                      return (
+                        <div key={String(resIndex)} className={`p-1 rounded ${highlight} flex flex-col`}>
+                          <span className="">
+                            {getArrayIndices(result.subsegments.start, result.subsegments.end)
+                              .map((i) => getBaseTextSubsegmentText(i))
+                              .join(' - ')}
+                          </span>
+                          <span className="text-blue-600">
+                            {getArrayIndices(result.ttsSegments.start, result.ttsSegments.end)
+                              .map((i) => getTtsSegmentText(i))
+                              .join(' - ')}
+                          </span>
+                          <div className="text-green-600 h-[4px] leading-0.5">
+                            {Array(result.matchParameters.minMatchLength).fill('•').join('\u00A0\u00A0\u00A0')}
+                          </div>
+                        </div>
+                      )
                     }
                     return (
-                      <div key={resIndex} className={`p-1 rounded ${highlight} flex flex-col`}>
-                        <span className="">{baseTextSubsegmentText}</span>
-                        {isMatch(result) && (
-                          <>
-                            <span className="text-blue-600">{getTtsSegmentText(result.ttsSegments.start)}</span>
-                            <div className="text-green-600 h-[4px] leading-0.5">
-                              {Array(result.matchParameters.minMatchLength).fill('•').join('\u00A0\u00A0\u00A0')}
-                            </div>
-                          </>
-                        )}
+                      <div key={String(resIndex)} className="p-1">
+                        {getBaseTextSubsegmentText(result.baseTextSubsegmentIndex)}
                       </div>
                     )
                   })}
@@ -106,6 +131,10 @@ const App: React.FC = () => {
 
 function getArrayIndices(start: number, end: number): number[] {
   return Array.from({ length: end - start }, (_, i) => i + start)
+}
+
+function getElementsInRange<T>(array: T[], range: { start: number; end: number }): T[] {
+  return array.slice(range.start, range.end)
 }
 
 export default App

@@ -21,6 +21,10 @@ export interface NodeCue {
 export declare type Node = NodeHeader | NodeCue
 export declare type NodeList = Node[]
 
+export function parseSrtCues(srtText: string) {
+  return parseSrt(srtText)
+}
+
 export function parseSrt(srtText: string): Node[] {
   const nodes: Node[] = []
   const blocks = srtText.trim().split(/\n\s*\n/)

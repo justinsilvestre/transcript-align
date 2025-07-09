@@ -14,7 +14,7 @@ export function findMatches(options: {
   ttsSegments: TextToSpeechSegment[]
   minMatchLength: number
   levenshteinThreshold: number
-  passNumber: number
+  pass: string
   baseTextSubsegmentsStartIndex: number
   baseTextSubsegmentsEnd: number
   ttsSegmentsStartIndex: number
@@ -26,7 +26,7 @@ export function findMatches(options: {
     ttsSegments,
     minMatchLength,
     levenshteinThreshold,
-    passNumber,
+    pass,
     baseTextSubsegmentsStartIndex,
     baseTextSubsegmentsEnd,
     ttsSegmentsStartIndex,
@@ -35,7 +35,7 @@ export function findMatches(options: {
   const matchParameters = {
     minMatchLength,
     levenshteinThreshold,
-    passNumber,
+    pass,
   }
 
   const results: BaseTextSubsegmentsMatchResult[] = []
@@ -69,7 +69,6 @@ export function findMatches(options: {
     if (matchFound) {
       searchStartIndex = ttsSegmentMatchIndex + 1
       results.push({
-        // baseTextSubsegmentIndex: subsegment.subsegmentIndex,
         subsegments: {
           start: subsegment.subsegmentIndex,
           end: subsegment.subsegmentIndex + 1,
@@ -88,19 +87,7 @@ export function findMatches(options: {
     }
   }
 
-  return {
-    results,
-    getBaseTextSubsegmentText: (index: number) => {
-      const subsegment = baseTextSubsegments.find((s) => s.subsegmentIndex === index)
-      if (!subsegment) throw new Error(`No base text subsegment found at index ${index}`)
-      return subsegment.text
-    },
-    getTtsSegmentText: (index: number) => {
-      const ttsSegment = ttsSegments[index]
-      if (!ttsSegment) throw new Error(`No TTS segment found at index ${index}`)
-      return ttsSegment.text
-    },
-  }
+  return results
 }
 export function continueFindingMatches(options: {
   baseTextSegments: BaseTextSegment[]
@@ -109,7 +96,7 @@ export function continueFindingMatches(options: {
   regionsSoFar: MatchStatusRegion[]
   minMatchLength: number
   levenshteinThreshold: number
-  passNumber?: number
+  pass?: string
 }) {
   const {
     baseTextSegments,
@@ -118,7 +105,7 @@ export function continueFindingMatches(options: {
     regionsSoFar: regions,
     minMatchLength,
     levenshteinThreshold,
-    passNumber = 1,
+    pass = '1',
   } = options
 
   const newMatchResults: BaseTextSubsegmentsMatchResult[] = []
@@ -136,13 +123,13 @@ export function continueFindingMatches(options: {
       const nextRegion = regions[regionIndex + 1]
       if (nextRegion && !nextRegion.isMatching)
         throw new Error('Cannot continue finding matches without a matching region after an unmatched one.')
-      const { results } = findMatches({
+      const results = findMatches({
         baseTextSubsegments: baseTextSubsegments,
         baseTextSegments: baseTextSegments,
         ttsSegments: ttsSegments,
         minMatchLength,
         levenshteinThreshold,
-        passNumber,
+        pass,
         baseTextSubsegmentsStartIndex: region.subsegments.start,
         baseTextSubsegmentsEnd: region.subsegments.end,
         ttsSegmentsStartIndex: previousRegion ? previousRegion.ttsSegments.end : 0,

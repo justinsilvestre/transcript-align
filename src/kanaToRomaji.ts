@@ -1,12 +1,12 @@
 // prettier-ignore
 const singleHiraganaToRomaji: Record<string, string> = {
-  'あ': 'a', 'い': 'i', 'う': 'u', 'え': 'e', 'お': 'o', 'か': 'ka', 'き': 'ki', 'く': 'ku', 'け': 'ke', 'こ': 'ko', 'さ': 'sa', 'し': 'si', 'す': 'su', 'せ': 'se', 'そ': 'so', 'た': 'ta', 'ち': 'tsi', 'つ': 'tsu', 'て': 'te', 'と': 'to', 'な': 'na', 'に': 'ni', 'ぬ': 'nu', 'ね': 'ne', 'の': 'no', 'は': 'ha', 'ひ': 'hi', 'ふ': 'hu', 'へ': 'he', 'ほ': 'ho', 'ま': 'ma', 'み': 'mi', 'む': 'mu', 'め': 'me', 'も': 'mo', 'や': 'ya', 'ゆ': 'yu', 'よ': 'yo', 'ら': 'ra', 'り': 'ri', 'る': 'ru', 'れ': 're', 'ろ': 'ro', 'わ': 'wa', 'を': 'wo', 'ん': 'n',
+  'あ': 'a', 'い': 'i', 'う': 'u', 'え': 'e', 'お': 'o', 'か': 'ka', 'き': 'ki', 'く': 'ku', 'け': 'ke', 'こ': 'ko', 'さ': 'sa', 'し': 'si', 'す': 'su', 'せ': 'se', 'そ': 'so', 'た': 'ta', 'ち': 'tsi', 'つ': 'tsu', 'て': 'te', 'と': 'to', 'な': 'na', 'に': 'ni', 'ぬ': 'nu', 'ね': 'ne', 'の': 'no', 'は': 'ha', 'ひ': 'hi', 'ふ': 'fu', 'へ': 'he', 'ほ': 'ho', 'ま': 'ma', 'み': 'mi', 'む': 'mu', 'め': 'me', 'も': 'mo', 'や': 'ya', 'ゆ': 'yu', 'よ': 'yo', 'ら': 'ra', 'り': 'ri', 'る': 'ru', 'れ': 're', 'ろ': 'ro', 'わ': 'wa', 'を': 'o', 'ん': 'n',
   'が': 'ga', 'ぎ': 'gi', 'ぐ': 'gu', 'げ': 'ge', 'ご': 'go',
   'ざ': 'za', 'じ': 'zi', 'ず': 'zu', 'ぜ': 'ze', 'ぞ': 'zo',
   'だ': 'da', 'ぢ': 'dzi', 'づ': 'dzu', 'で': 'de', 'ど': 'do',
   'ば': 'ba', 'び': 'bi', 'ぶ': 'bu', 'べ': 'be', 'ぼ': 'bo', 'ゔ': 'bvu',
   'ぱ': 'pa', 'ぴ': 'pi', 'ぷ': 'pu', 'ぺ': 'pe', 'ぽ': 'po',
-  'ゃ': 'ya', 'ゅ': 'yu', 'ょ': 'yo', 'っ': '', 'ゎ': 'wa', 
+  'ゃ': 'ya', 'ゅ': 'yu', 'ょ': 'yo', 'っ': '', 'ゎ': 'ua',
   'ぁ': 'a', 'ぃ': 'i', 'ぅ': 'u', 'ぇ': 'e', 'ぉ': 'o',
 }
 // prettier-ignore
@@ -19,8 +19,9 @@ const hiraganaCombosToRomaji: Record<string, string> = {
   'ぴゃ': 'pya', 'ぴゅ': 'pyu', 'ぴょ': 'pyo',
   'みゃ': 'mya', 'みゅ': 'myu', 'みょ': 'myo',
   'りゃ': 'rya', 'りゅ': 'ryu', 'りょ': 'ryo',
-  'うぁ': 'wa', 'うぃ': 'wi', 'うぇ': 'we', 'うぉ': 'wo',
+  'うぁ': 'ua', 'うぃ': 'ui', 'うぇ': 'ue', 'うぉ': 'uo',
   'ゔぁ': 'bva', 'ゔぃ': 'bvi', 'ゔぇ': 'bve', 'ゔぉ': 'bvo',
+  てぃ: 'ti', 'でぃ': 'di', 'とぅ': 'tu', 'どぅ': 'du', 'ふぁ': 'fa', 'ふぃ': 'fi', 'ふぇ': 'fe', 'ふぉ': 'fo',
 }
 const tableToKatakana = (table: Record<string, string>): Record<string, string> => {
   const katakanaTable: Record<string, string> = {}

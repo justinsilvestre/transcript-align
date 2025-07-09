@@ -1,7 +1,9 @@
-import { getRegionsByMatchStatus, MatchStatusRegion } from './getRegionsByMatchStatus'
+import { getRegionsByMatchStatus } from './getRegionsByMatchStatus'
 import { preprocessBaseTextSegments } from './preprocessBaseTextSegments'
 import { findMatches, continueFindingMatches } from './findMatches'
-import { toRomaji } from './kanaToRomaji'
+import { alignSegmentCombinationsWithinRegions } from './alignSegmentCombinationsWithinRegions'
+import { defaultNormalizeJapanese } from './defaultNormalizeJapanese'
+import { pickUpStragglers } from './pickUpStragglers'
 export type BaseTextSegment = {
   index: number
   text: string
@@ -29,7 +31,7 @@ export type MatchedBaseTextSubsegments = {
   subsegments: { start: number; end: number }
   ttsSegments: { start: number; end: number }
   matchParameters: {
-    passNumber: number
+    pass: string
     minMatchLength: number
     levenshteinThreshold: number
   }
@@ -40,7 +42,7 @@ export type UnmatchedBaseTextSubsegment = {
 }
 
 type AlignmentPassParameters = {
-  passNumber: number
+  pass: string
   minMatchLength: number
   levenshteinThreshold: number
 }
@@ -60,21 +62,33 @@ export function syncTranscriptWithSubtitles(options: {
     baseTextSegments,
     ttsSegments: ttsSegmentsInput,
     baseTextSubsegmenter,
-    normalizeBaseTextSubsegment = defaultNormalize,
-    normalizeTtsSegment = defaultNormalize,
+    normalizeBaseTextSubsegment = defaultNormalizeJapanese,
+    normalizeTtsSegment = defaultNormalizeJapanese,
   } = options
   const ttsSegments: TextToSpeechSegment[] = ttsSegmentsInput.map((segment, index) => ({
     text: segment.text,
     normalizedText: normalizeTtsSegment(segment.text),
     index,
   }))
+
   const subsegments = preprocessBaseTextSegments(baseTextSegments, baseTextSubsegmenter, normalizeBaseTextSubsegment)
+
+  const getBaseTextSubsegmentText = (index: number) => {
+    const subsegment = subsegments.find((s) => s.subsegmentIndex === index)
+    if (!subsegment) throw new Error(`No base text subsegment found at index ${index}`)
+    return subsegment.text
+  }
+  const getTtsSegmentText = (index: number) => {
+    const ttsSegment = ttsSegments[index]
+    if (!ttsSegment) throw new Error(`No TTS segment found at index ${index}`)
+    return ttsSegment.text
+  }
 
   const firstPass = findMatches({
     baseTextSubsegments: subsegments,
     baseTextSegments: baseTextSegments,
     ttsSegments: ttsSegments,
-    passNumber: 1,
+    pass: '1',
     minMatchLength: 15,
     levenshteinThreshold: 2,
     baseTextSubsegmentsStartIndex: 0,
@@ -83,11 +97,11 @@ export function syncTranscriptWithSubtitles(options: {
     ttsSegmentsEnd: ttsSegments.length,
   })
   let latestPass = {
-    results: firstPass.results,
-    regions: getRegionsByMatchStatus(firstPass.results, ttsSegments.length),
+    results: firstPass,
+    regions: getRegionsByMatchStatus(firstPass, ttsSegments.length),
   }
 
-  let passNumber = 1
+  let pass = 1
 
   // these numbers would be adjusted for different languages.
   // just doing Japanese for now.
@@ -145,11 +159,10 @@ export function syncTranscriptWithSubtitles(options: {
       baseTextSegments,
       baseTextSubsegments: subsegments,
       ttsSegments,
-      // resultsSoFar: latestPass,
       regionsSoFar: latestPass.regions,
       minMatchLength,
       levenshteinThreshold,
-      passNumber: ++passNumber,
+      pass: String(+pass + 1),
     })
   }
 
@@ -179,98 +192,29 @@ export function syncTranscriptWithSubtitles(options: {
   // so they will likely be already aligned, with either
   // strange spelling in the base text or inaccurate TTS results.
 
-  // align the ends of regions here,
-  // something like this:
-  // const afterAligningEnds = alignRegionEnds({
-  //   regions: latestPass.regions,
-  //   getBaseTextSubsegmentText: firstPass.getBaseTextSubsegmentText,
-  //   getTtsSegmentText: firstPass.getTtsSegmentText,
-  //   baseTextSubsegments: subsegments,
-  //   ttsSegments,
-  //   minMatchLength: 15,
-  //   levenshteinThreshold: 2,
-  // })
-  // latestPass.regions = getRegionsByMatchStatus(afterAligningEnds, ttsSegments.length)
-  // latestPass.results = afterAligningEnds
+  for (let i = 0; i < 4; i++) {
+    const afterAligningEnds = alignSegmentCombinationsWithinRegions({
+      regions: latestPass.regions,
+      baseTextSubsegments: subsegments,
+      ttsSegments,
+    })
+    latestPass.regions = getRegionsByMatchStatus(afterAligningEnds, ttsSegments.length)
+    latestPass.results = afterAligningEnds
+
+    const afterPickingUpStragglers = pickUpStragglers({
+      baseTextSubsegments: subsegments,
+      ttsSegments,
+      regions: latestPass.regions,
+    })
+    latestPass.regions = getRegionsByMatchStatus(afterPickingUpStragglers, ttsSegments.length)
+    latestPass.results = afterPickingUpStragglers
+  }
 
   return {
     ...latestPass,
 
-    getBaseTextSubsegmentText: firstPass.getBaseTextSubsegmentText,
-    getTtsSegmentText: firstPass.getTtsSegmentText,
-  }
-}
-
-function alignRegionEnds(options: {
-  regions: MatchStatusRegion[]
-  getBaseTextSubsegmentText: (index: number) => string
-  getTtsSegmentText: (index: number) => string
-  minMatchLength: number
-  levenshteinThreshold: number
-  baseTextSubsegments: BaseTextSubsegment[]
-  ttsSegments: TextToSpeechSegment[]
-}) {
-  const {
-    regions,
+    baseTextSubsegments: subsegments,
     getBaseTextSubsegmentText,
     getTtsSegmentText,
-    minMatchLength,
-    levenshteinThreshold,
-    baseTextSubsegments,
-    ttsSegments,
-  } = options
-  const newResults: BaseTextSubsegmentsMatchResult[] = []
-
-  for (const region of regions) {
-    if (region.isMatching) {
-      newResults.push(...region.results)
-      continue
-    }
-    // if the region has just 1 base text subsegment and 1 tts segment,
-    // no need for further processing.
-    if (region.results.length === 1 && region.ttsSegments.start === region.ttsSegments.end - 1) {
-      newResults.push(...region.results)
-      continue
-    }
-
-    // now the previous region is a matching one,
-    // and this region is an unmatched one.
-
-    // get the levenshtein distance between this region's first subsegment and ttsSegment.
-    // then see if adding either the next base text subsegment or the next ttsSegment
-    // improves the levenshtein distance.
-    // keep doing this for both sides until the levenshtein distance
-    // is no longer improved by adding more segments.
-    // then add the matched segments to the results.
-
-    // then, start the process again,
-    // but this time, start from the end of the region,
   }
-
-  return newResults
-}
-
-function defaultNormalize(text: string): string {
-  return (
-    text
-      .replace(/[\s。？」、！』―]+/g, '')
-      // // replace katakana with hiragana
-      // .replace(/[\u30A1-\u30F6]/g, (match) => String.fromCharCode(match.charCodeAt(0) - 96))
-      // replace kana with romaji
-      .replace(/[\u3041-\u3096\u30A1-\u30F6]+/g, (match) => {
-        console.log(match, toRomaji(match))
-        return toRomaji(match)
-      })
-      // replace Chinese numerals with Arabic numerals
-      .replace(/[\u4E00-\u9FA5]/g, (match) => {
-        const charCode = match.charCodeAt(0)
-        if (charCode >= 0x4e00 && charCode <= 0x9fa5) {
-          // Convert Chinese numeral to Arabic numeral
-          return String.fromCharCode(charCode - 0x4e00 + 0x0030)
-        }
-        return match
-      })
-      .trim()
-      .toLowerCase()
-  )
 }
