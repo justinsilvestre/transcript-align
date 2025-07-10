@@ -1,33 +1,39 @@
+import { NormalizeTextFunction } from './NormalizeTextFunction'
 import { BaseTextSegment, BaseTextSubsegment } from './syncTranscriptWithSubtitles'
 
-export function preprocessBaseTextSegments(
+export async function preprocessBaseTextSegments(
   baseTextSegments: BaseTextSegment[],
   baseTextSubsegmenter: RegExp,
-  normalizeBaseTextSubsegment: (text: string) => string,
-): BaseTextSubsegment[] {
+  normalizeBaseTextSubsegment: NormalizeTextFunction,
+): Promise<BaseTextSubsegment[]> {
   let subsegmentIndex = 0
-  return baseTextSegments.flatMap((segment): BaseTextSubsegment[] => {
-    if (!segment.text)
-      return [
-        {
-          segmentIndex: segment.index,
-          indexInSource: 0,
-          subsegmentIndex: subsegmentIndex++,
-          text: '',
-          normalizedText: '',
-        },
-      ]
+  const result: BaseTextSubsegment[] = []
+  for (const segment of baseTextSegments) {
+    if (!segment.text) {
+      result.push({
+        segmentIndex: segment.index,
+        indexInSource: 0,
+        subsegmentIndex: subsegmentIndex++,
+        text: '',
+        normalizedText: '',
+      })
+      continue
+    }
 
     const subsegments = segment.text.match(baseTextSubsegmenter)
     if (!subsegments) throw new Error(`No matches found for segment: ${segment.text}`)
-    return subsegments.map(
-      (text, index): BaseTextSubsegment => ({
+
+    for (let index = 0; index < subsegments.length; index++) {
+      const text = subsegments[index]
+      const normalizedText = await normalizeBaseTextSubsegment(text)
+      result.push({
         segmentIndex: segment.index,
         indexInSource: index,
         subsegmentIndex: subsegmentIndex++,
         text,
-        normalizedText: normalizeBaseTextSubsegment(text),
-      }),
-    )
-  })
+        normalizedText,
+      })
+    }
+  }
+  return result
 }

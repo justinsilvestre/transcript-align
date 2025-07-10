@@ -13,7 +13,7 @@ const defaultNormalize = (text: string): string =>
     .toLowerCase()
 
 describe('findMatches', () => {
-  it('gets a reasonable number of matches for first pass', () => {
+  it('gets a reasonable number of matches for first pass', async () => {
     const transcript = rashomonOriginalText
     const segments = [
       {
@@ -22,7 +22,7 @@ describe('findMatches', () => {
         index: 0,
       },
     ]
-    const subsegments = preprocessBaseTextSegments(
+    const subsegments = await preprocessBaseTextSegments(
       segments,
       /[^\s。？、！―]+[\s。？、！―]+[」』]*|[^\s。？」、！』―]+[\s。？、！―」』]*$/gu,
       defaultNormalize,

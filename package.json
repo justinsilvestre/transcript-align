@@ -7,6 +7,7 @@
   "license": "MIT",
   "scripts": {
     "build": "vite build",
+    "postbuild": "mkdir -p ./dist/dict; cp -r ./node_modules/kuroshiro-browser/dist/dict/* ./dist/dict;",
     "dev": "vite",
     "preview": "vite preview",
     "format": "prettier --write \"src/**/*.ts\" \"src/**/*.js\"",
@@ -28,7 +29,10 @@
   "dependencies": {
     "@tailwindcss/vite": "^4.1.11",
     "@types/fast-levenshtein": "^0.0.1",
+    "@types/kuromoji": "^0.1.3",
     "fast-levenshtein": "^3.0.0",
+    "kuromoji": "^0.1.2",
+    "kuroshiro-browser": "^0.1.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "subtitle": "^4.2.2-alpha.0",

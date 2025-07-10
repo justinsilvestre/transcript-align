@@ -2,17 +2,17 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { buildAlignedSrt } from './buildAlignedSrt'
 import { rashomonOriginalText } from '../testData/rashomonOriginalText'
 import { rashomonSrt } from '../testData/rashomonSrt'
-import { alignWithSrt } from './alignWithSrt'
+import { AlignmentResult, alignWithSrt } from './alignWithSrt'
 import { formatCueTime, parseSrtCues } from './srtHelpers'
 
 describe('buildAlignedSrt', () => {
   let newSrtText: string
-  let alignment: ReturnType<typeof alignWithSrt>
+  let alignment: AlignmentResult
 
-  beforeAll(() => {
+  beforeAll(async () => {
     const baseText = rashomonOriginalText
     const srtText = rashomonSrt
-    alignment = alignWithSrt(baseText, srtText)
+    alignment = await alignWithSrt(baseText, srtText)
 
     newSrtText = buildAlignedSrt({
       ...alignment,

@@ -4,6 +4,7 @@ import { findMatches, continueFindingMatches } from './findMatches'
 import { alignSegmentCombinationsWithinRegions } from './alignSegmentCombinationsWithinRegions'
 import { defaultNormalizeJapanese } from './defaultNormalizeJapanese'
 import { pickUpStragglers } from './pickUpStragglers'
+import { NormalizeTextFunction } from './NormalizeTextFunction'
 export type BaseTextSegment = {
   index: number
   text: string
@@ -47,7 +48,7 @@ type AlignmentPassParameters = {
   levenshteinThreshold: number
 }
 
-export function syncTranscriptWithSubtitles(options: {
+export async function syncTranscriptWithSubtitles(options: {
   /** the base text already segmented (e.g. according to a bilingual alignment) */
   baseTextSegments: BaseTextSegment[]
   /** segments of automatic text-to-speech output, from which timing can be derived */
@@ -55,8 +56,8 @@ export function syncTranscriptWithSubtitles(options: {
   /** a regular expression for breaking base text segments into smaller chunks
    * which can be matched against subtitles */
   baseTextSubsegmenter: RegExp
-  normalizeBaseTextSubsegment?: (text: string) => string
-  normalizeTtsSegment?: (text: string) => string
+  normalizeBaseTextSubsegment?: NormalizeTextFunction
+  normalizeTtsSegment?: NormalizeTextFunction
 }) {
   const {
     baseTextSegments,
@@ -65,13 +66,19 @@ export function syncTranscriptWithSubtitles(options: {
     normalizeBaseTextSubsegment = defaultNormalizeJapanese,
     normalizeTtsSegment = defaultNormalizeJapanese,
   } = options
-  const ttsSegments: TextToSpeechSegment[] = ttsSegmentsInput.map((segment, index) => ({
-    text: segment.text,
-    normalizedText: normalizeTtsSegment(segment.text),
-    index,
-  }))
+  const ttsSegments: TextToSpeechSegment[] = await Promise.all(
+    ttsSegmentsInput.map(async (segment, index) => ({
+      text: segment.text,
+      normalizedText: await normalizeTtsSegment(segment.text),
+      index,
+    })),
+  )
 
-  const subsegments = preprocessBaseTextSegments(baseTextSegments, baseTextSubsegmenter, normalizeBaseTextSubsegment)
+  const subsegments = await preprocessBaseTextSegments(
+    baseTextSegments,
+    baseTextSubsegmenter,
+    normalizeBaseTextSubsegment,
+  )
 
   const getBaseTextSubsegmentText = (index: number) => {
     const subsegment = subsegments.find((s) => s.subsegmentIndex === index)

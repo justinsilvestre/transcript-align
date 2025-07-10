@@ -1,20 +1,50 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import './App.css'
-import { alignWithSrt } from './alignWithSrt'
+import { AlignmentResult, alignWithSrt } from './alignWithSrt'
 import { isMatch, MatchStatusRegion } from './getRegionsByMatchStatus'
 import { hanaOriginalText } from '../testData/hanaOriginalText'
 import { hanaSrt } from '../testData/hanaSrt'
 import { buildAlignedSrt } from './buildAlignedSrt'
 import { BaseTextSubsegment, MatchedBaseTextSubsegments } from './syncTranscriptWithSubtitles'
 
+// @ts-expect-error
+import { Kuroshiro } from 'kuroshiro-browser'
+
 const App: React.FC = () => {
   const [baseText, setBaseText] = useState<string>(hanaOriginalText)
   const [srtText, setSrtText] = useState<string>(hanaSrt)
 
-  const alignment = alignWithSrt(baseText, srtText)
-  const { regions, getBaseTextSubsegmentText, getTtsSegmentText, baseTextSubsegments, results } = alignment
+  const [alignment, setAlignment] = useState<AlignmentResult | null>(null)
 
-  const totalMatches = results.filter((result) => isMatch(result)).length
+  const [kuroshiro, setKuroshiro] = useState<any>(null)
+
+  useEffect(() => {
+    getKuroshiro()
+      .then((kuroshiroInstance) => {
+        setKuroshiro(kuroshiroInstance)
+        console.log('Kuroshiro initialized')
+      })
+      .catch((error) => {
+        console.error('Failed to initialize Kuroshiro:', error)
+      })
+  }, [])
+
+  useEffect(() => {
+    ;(async function () {
+      if (!kuroshiro) {
+        const newAlignment = await alignWithSrt(baseText, srtText)
+        setAlignment(newAlignment)
+      } else {
+        const newAlignment = await alignWithSrt(baseText, srtText, {
+          normalizeBaseTextSubsegment: (text: string) => kuroshiro.convert(text, { to: 'romaji' }),
+          normalizeTtsSegment: (text: string) => kuroshiro.convert(text, { to: 'romaji' }),
+        })
+        setAlignment(newAlignment)
+      }
+    })()
+  }, [baseText, srtText, kuroshiro])
+
+  const totalMatches = alignment?.results.filter((result) => isMatch(result)).length || 0
   console.log('Total matches:', totalMatches)
 
   return (
@@ -54,31 +84,39 @@ const App: React.FC = () => {
           <div className="flex flex-col justify-end">
             <button
               className="mb-2 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-              onClick={() => {
-                const alignedSrt = buildAlignedSrt({ ...alignment, srtText })
+              onClick={
+                !alignment
+                  ? undefined
+                  : () => {
+                      const alignedSrt = buildAlignedSrt({ ...alignment, srtText })
 
-                const blob = new Blob([alignedSrt], { type: 'text/plain' })
-                const url = URL.createObjectURL(blob)
-                const a = document.createElement('a')
-                a.href = url
-                a.download = 'aligned.srt'
-                document.body.appendChild(a)
-                a.click()
-                document.body.removeChild(a)
-                URL.revokeObjectURL(url)
+                      const blob = new Blob([alignedSrt], { type: 'text/plain' })
+                      const url = URL.createObjectURL(blob)
+                      const a = document.createElement('a')
+                      a.href = url
+                      a.download = 'aligned.srt'
+                      document.body.appendChild(a)
+                      a.click()
+                      document.body.removeChild(a)
+                      URL.revokeObjectURL(url)
 
-                alert('Aligned SRT downloaded successfully!')
-              }}
+                      alert('Aligned SRT downloaded successfully!')
+                    }
+              }
             >
               Download Aligned SRT
             </button>
             <button
               className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700"
-              onClick={async () => {
-                const alignedSrt = buildAlignedSrt({ ...alignment, srtText })
-                await navigator.clipboard.writeText(alignedSrt)
-                alert('Aligned SRT copied to clipboard!')
-              }}
+              onClick={
+                !alignment
+                  ? undefined
+                  : async () => {
+                      const alignedSrt = buildAlignedSrt({ ...alignment, srtText })
+                      await navigator.clipboard.writeText(alignedSrt)
+                      alert('Aligned SRT copied to clipboard!')
+                    }
+              }
             >
               Copy Aligned SRT
             </button>
@@ -88,16 +126,17 @@ const App: React.FC = () => {
         <div>
           <h2>Results</h2>
           <div>
-            {regions.map((region, index) => (
-              <RegionDisplay
-                key={index}
-                index={index}
-                region={region}
-                baseTextSubsegments={baseTextSubsegments}
-                getBaseTextSubsegmentText={getBaseTextSubsegmentText}
-                getTtsSegmentText={getTtsSegmentText}
-              />
-            ))}
+            {alignment &&
+              alignment.regions.map((region, index) => (
+                <RegionDisplay
+                  key={index}
+                  index={index}
+                  region={region}
+                  baseTextSubsegments={alignment.baseTextSubsegments}
+                  getBaseTextSubsegmentText={alignment.getBaseTextSubsegmentText}
+                  getTtsSegmentText={alignment.getTtsSegmentText}
+                />
+              ))}
           </div>
         </div>
       </main>
@@ -213,3 +252,9 @@ function getArrayIndices(start: number, end: number): number[] {
 }
 
 export default App
+
+const isProductionMode = process.env.NODE_ENV === 'production'
+console.log('isProductionMode:', isProductionMode)
+async function getKuroshiro() {
+  return Kuroshiro.buildAndInitWithKuromoji(isProductionMode)
+}

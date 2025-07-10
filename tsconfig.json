@@ -1,6 +1,7 @@
 {
   "compilerOptions": {
     "target": "es2022",
+    "module": "nodenext",
     "lib": ["es2022", "dom", "dom.iterable"],
     "downlevelIteration": true,
     "esModuleInterop": true,
@@ -8,10 +9,11 @@
     "declaration": true,
     "strict": true,
     "jsx": "react-jsx",
-    "moduleResolution": "bundler",
+    "moduleResolution": "nodenext",
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "strictNullChecks": true
   },
   "include": ["src", "testData"],
   "exclude": ["node_modules", "**/__tests__/*"]

@@ -10,10 +10,10 @@ import { isLevenshteinImprovement } from './isLevenshteinImprovement'
 // TODO:
 // make sure that "この髪を抜いてな" repetition is handled correctly (see generated HTML preview)
 
-describe('alignWithSrt', () => {
-  it('preserves all the subsegments from the transcript', () => {
+describe('alignWithSrt', async () => {
+  it('preserves all the subsegments from the transcript', async () => {
     const transcript = rashomonOriginalText
-    const { results, baseTextSubsegments } = alignWithSrt(transcript, rashomonSrt)
+    const { results, baseTextSubsegments } = await alignWithSrt(transcript, rashomonSrt)
     const missingSubsegments = baseTextSubsegments.filter((subsegment) => {
       return !results.some((result) => {
         return isMatch(result)
@@ -25,10 +25,10 @@ describe('alignWithSrt', () => {
     expect(missingSubsegments.slice(0, 10)).toEqual([])
   })
 
-  it('preserves all the TTS segments from the SRT in regions', () => {
+  it('preserves all the TTS segments from the SRT in regions', async () => {
     const srtSegments = parseSrtCues(rashomonSrt)
     const transcript = rashomonOriginalText
-    const { results, baseTextSubsegments, regions } = alignWithSrt(transcript, rashomonSrt)
+    const { results, baseTextSubsegments, regions } = await alignWithSrt(transcript, rashomonSrt)
     const allSrtSegmentIndexes = new Set(
       regions.flatMap((region) => {
         return getArrayIndices(region.ttsSegments.start, region.ttsSegments.end)
@@ -40,9 +40,9 @@ describe('alignWithSrt', () => {
     expect(missingSrtSegments.slice(0, 10)).toEqual([])
   })
 
-  it('preserves all the text from the transcript in subsegments', () => {
+  it('preserves all the text from the transcript in subsegments', async () => {
     const transcript = rashomonOriginalText
-    const { baseTextSubsegments, getBaseTextSubsegmentText } = alignWithSrt(transcript, rashomonSrt)
+    const { baseTextSubsegments, getBaseTextSubsegmentText } = await alignWithSrt(transcript, rashomonSrt)
     const combinedTextSubsegmentsText = baseTextSubsegments
       .map((result) => {
         return getBaseTextSubsegmentText(result.subsegmentIndex)
@@ -52,9 +52,9 @@ describe('alignWithSrt', () => {
     expect(combinedTextSubsegmentsText).toEqual(transcript)
   })
 
-  it('preserves all the text from the transcript in match results', () => {
+  it('preserves all the text from the transcript in match results', async () => {
     const transcript = rashomonOriginalText
-    const { results, getBaseTextSubsegmentText, getTtsSegmentText } = alignWithSrt(transcript, rashomonSrt)
+    const { results, getBaseTextSubsegmentText, getTtsSegmentText } = await alignWithSrt(transcript, rashomonSrt)
 
     const combinedText = results
       .map((result) => {
