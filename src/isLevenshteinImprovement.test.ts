@@ -38,6 +38,7 @@ describe('isLevenshteinImprovement', () => {
       '皆そのくらいなことをされてもいい人間ばかりだぞよ',
     ),
     improvementCase('神は', '手に従って抜けるらしい', '髪は手に従って抜けるらしい。 '),
+    improvementCase('今は', 'むげにいやしくなりさがれる人の', '「今はむげにいやしくなりさがれる人の、'),
   ]
   const worseningCase = (text: string, tentativeTextToAppend: string, comparisonBaseText: string) => ({
     text: text,

@@ -11,50 +11,6 @@ import {
 import { bringInStragglerFromNextRegion, pickUpStragglers } from './pickUpStragglers'
 import { defaultNormalizeJapanese } from './defaultNormalizeJapanese'
 
-const unmatched = (index: number): UnmatchedBaseTextSubsegment => ({
-  baseTextSubsegmentIndex: index,
-  ttsSegmentIndex: null,
-})
-const matched = (
-  [baseStart, baseEnd]: [number, number],
-  [ttsStart, ttsEnd]: [number, number],
-): MatchedBaseTextSubsegments => ({
-  subsegments: {
-    start: baseStart,
-    end: baseEnd,
-  },
-  ttsSegments: {
-    start: ttsStart,
-    end: ttsEnd,
-  },
-  matchParameters: {
-    pass: 'straggler',
-    minMatchLength: expect.any(Number),
-    levenshteinThreshold: expect.any(Number),
-  },
-})
-
-const matchedRegion = (
-  [baseStart, baseEnd]: [number, number],
-  [ttsStart, ttsEnd]: [number, number],
-  results: MatchedBaseTextSubsegments[],
-): MatchStatusRegion => ({
-  isMatching: true,
-  subsegments: { start: baseStart, end: baseEnd },
-  ttsSegments: { start: ttsStart, end: ttsEnd },
-  results,
-})
-const unmatchedRegion = (
-  [baseStart, baseEnd]: [number, number],
-  [ttsStart, ttsEnd]: [number, number],
-  results: UnmatchedBaseTextSubsegment[],
-): MatchStatusRegion => ({
-  isMatching: false,
-  subsegments: { start: baseStart, end: baseEnd },
-  ttsSegments: { start: ttsStart, end: ttsEnd },
-  results,
-})
-
 describe('pickUpStragglers', () => {
   it('should pick up one-side stragglers correctly', () => {
     // regions:
@@ -324,18 +280,6 @@ describe('pickUpStragglers', () => {
     //   '下人は嘲るような声で念を押した。'     '手には着けるような声で 念を押した'
     // O result 1: 'そうして、' + '一足前へ出ると、' --- 'そして一歩前へ出ると不意に右の手を'
 
-    const subsegment = (index: number, text: string) => ({
-      segmentIndex: 0,
-      indexInSource: index,
-      subsegmentIndex: index,
-      text,
-      normalizedText: defaultNormalizeJapanese(text),
-    })
-    const ttsSegment = (index: number, text: string) => ({
-      index,
-      text,
-      normalizedText: defaultNormalizeJapanese(text),
-    })
     const baseTextSubsegments: BaseTextSubsegment[] = [
       subsegment(0, '意識の外に追い出されていた。'),
       subsegment(1, '「きっと、'),
@@ -466,4 +410,61 @@ describe('bringInStragglerFromNextRegion', () => {
 
     expect(matchRegionResultsWithPickedUpStraggler).toEqual([matched([0, 2], [0, 1])])
   })
+})
+
+const subsegment = (index: number, text: string) => ({
+  segmentIndex: 0,
+  indexInSource: index,
+  subsegmentIndex: index,
+  text,
+  normalizedText: defaultNormalizeJapanese(text),
+})
+const ttsSegment = (index: number, text: string) => ({
+  index,
+  text,
+  normalizedText: defaultNormalizeJapanese(text),
+})
+
+const unmatched = (index: number): UnmatchedBaseTextSubsegment => ({
+  baseTextSubsegmentIndex: index,
+  ttsSegmentIndex: null,
+})
+const matched = (
+  [baseStart, baseEnd]: [number, number],
+  [ttsStart, ttsEnd]: [number, number],
+): MatchedBaseTextSubsegments => ({
+  subsegments: {
+    start: baseStart,
+    end: baseEnd,
+  },
+  ttsSegments: {
+    start: ttsStart,
+    end: ttsEnd,
+  },
+  matchParameters: {
+    pass: 'straggler',
+    minMatchLength: expect.any(Number),
+    levenshteinThreshold: expect.any(Number),
+  },
+})
+
+const matchedRegion = (
+  [baseStart, baseEnd]: [number, number],
+  [ttsStart, ttsEnd]: [number, number],
+  results: MatchedBaseTextSubsegments[],
+): MatchStatusRegion => ({
+  isMatching: true,
+  subsegments: { start: baseStart, end: baseEnd },
+  ttsSegments: { start: ttsStart, end: ttsEnd },
+  results,
+})
+const unmatchedRegion = (
+  [baseStart, baseEnd]: [number, number],
+  [ttsStart, ttsEnd]: [number, number],
+  results: UnmatchedBaseTextSubsegment[],
+): MatchStatusRegion => ({
+  isMatching: false,
+  subsegments: { start: baseStart, end: baseEnd },
+  ttsSegments: { start: ttsStart, end: ttsEnd },
+  results,
 })

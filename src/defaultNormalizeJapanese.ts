@@ -3,7 +3,7 @@ import { toRomaji } from './kanaToRomaji'
 export function defaultNormalizeJapanese(text: string): string {
   return (
     text
-      .replace(/[\s。？」、！』―]+/gu, '')
+      .replace(/[\s。？」、！』―「『]+/gu, '')
       // // replace katakana with hiragana
       // .replace(/[\u30A1-\u30F6]/g, (match) => String.fromCharCode(match.charCodeAt(0) - 96))
       // replace kana with romaji

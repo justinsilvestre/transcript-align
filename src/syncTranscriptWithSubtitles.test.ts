@@ -34,7 +34,6 @@ describe('findMatches', () => {
     }))
     const results = findMatches({
       baseTextSubsegments: subsegments,
-      baseTextSegments: segments,
       ttsSegments: ttsSegments,
       pass: '`',
       minMatchLength: 15,

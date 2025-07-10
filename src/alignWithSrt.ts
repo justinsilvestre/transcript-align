@@ -1,6 +1,8 @@
 import { defaultNormalizeJapanese } from './defaultNormalizeJapanese'
-import { parseSrt } from './srtHelpers'
+import { parseSrt, parseSrtCues } from './srtHelpers'
 import { syncTranscriptWithSubtitles } from './syncTranscriptWithSubtitles'
+
+export type AlignmentResult = ReturnType<typeof alignWithSrt>
 
 export function alignWithSrt(transcriptText: string, srtText: string) {
   const singleTranscriptSegmentInput = (text: string) => [
@@ -9,7 +11,7 @@ export function alignWithSrt(transcriptText: string, srtText: string) {
 
   const syncResult = syncTranscriptWithSubtitles({
     baseTextSegments: singleTranscriptSegmentInput(transcriptText),
-    ttsSegments: parseSrt(srtText).map((n, i) => ({
+    ttsSegments: parseSrtCues(srtText).map((n, i) => ({
       text: typeof n.data === 'string' ? n.data : n.data.text,
       index: i,
     })),

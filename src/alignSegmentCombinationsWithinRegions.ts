@@ -17,8 +17,9 @@ export function alignSegmentCombinationsWithinRegions(options: {
   regions: MatchStatusRegion[]
   baseTextSubsegments: BaseTextSubsegment[]
   ttsSegments: TextToSpeechSegment[]
+  similarityThreshold?: number
 }) {
-  const { regions, baseTextSubsegments, ttsSegments } = options
+  const { regions, baseTextSubsegments, ttsSegments, similarityThreshold } = options
   const newResults: BaseTextSubsegmentsMatchResult[] = []
 
   for (const region of regions) {
@@ -26,17 +27,13 @@ export function alignSegmentCombinationsWithinRegions(options: {
       newResults.push(...region.results)
       continue
     }
-    // if the region has just 1 base text subsegment and 1 tts segment,
-    // no need for further processing.
+
     if (region.results.length === 1 && region.ttsSegments.end - region.ttsSegments.start === 1) {
       newResults.push(...region.results)
       continue
     }
 
     if (region.ttsSegments.end - region.ttsSegments.start < 1) {
-      // if there are no tts segments in this region,
-      // just keep the original results.
-      // LATER: we will try attaching to other regions
       newResults.push(...region.results)
       continue
     }
@@ -58,12 +55,13 @@ export function alignSegmentCombinationsWithinRegions(options: {
       },
     }
 
-    let topImprovement = findFirstImprovementFromTop({
-      baseTextSubsegments,
-      ttsSegments,
-      region,
-      crawlRange: crawlDownRange,
-    })
+    let topImprovement =
+      findFirstImprovementFromTop({
+        baseTextSubsegments,
+        ttsSegments,
+        region,
+        crawlRange: crawlDownRange,
+      }) || null
     while (topImprovement) {
       const expansion = expandImprovementDown({
         baseTextSubsegments,
@@ -76,6 +74,7 @@ export function alignSegmentCombinationsWithinRegions(options: {
 
       topImprovement = expansion
     }
+    if (!passesSimilarityThreshold(topImprovement, similarityThreshold)) topImprovement = null
 
     const crawlUpRange = {
       subsegments: {
@@ -95,12 +94,13 @@ export function alignSegmentCombinationsWithinRegions(options: {
         end: region.ttsSegments.end,
       },
     }
-    let bottomImprovement = findFirstImprovementFromBottom({
-      baseTextSubsegments,
-      ttsSegments,
-      region,
-      crawlRange: crawlUpRange,
-    })
+    let bottomImprovement =
+      findFirstImprovementFromBottom({
+        baseTextSubsegments,
+        ttsSegments,
+        region,
+        crawlRange: crawlUpRange,
+      }) || null
     while (bottomImprovement) {
       const expansion = expandImprovementUp({
         baseTextSubsegments,
@@ -112,6 +112,7 @@ export function alignSegmentCombinationsWithinRegions(options: {
 
       bottomImprovement = expansion
     }
+    if (!passesSimilarityThreshold(topImprovement, similarityThreshold)) topImprovement = null
 
     if (!topImprovement && !bottomImprovement) {
       // if no pairing was found, keep the original results.
@@ -170,13 +171,7 @@ export function alignSegmentCombinationsWithinRegions(options: {
             levenshteinThreshold: 5, //placeholder
           },
         }
-        // const newUnmatchedBefore: UnmatchedBaseTextSubsegment[] = getElementsInRange(baseTextSubsegments, {
-        //   start: Math.max(region.subsegments.start, topImprovement?.subsegments.end || -Infinity),
-        //   end: newBottomMatch.subsegments.start,
-        // }).map((subsegment, index) => ({
-        //   baseTextSubsegmentIndex: subsegment.subsegmentIndex,
-        //   ttsSegmentIndex: null,
-        // }))
+
         const newUnmatchedAfter: UnmatchedBaseTextSubsegment[] = getElementsInRange(baseTextSubsegments, {
           start: newBottomMatch.subsegments.end,
           end: region.subsegments.end,
@@ -184,20 +179,9 @@ export function alignSegmentCombinationsWithinRegions(options: {
           baseTextSubsegmentIndex: subsegment.subsegmentIndex,
           ttsSegmentIndex: null,
         }))
-        // newResults.push(...newUnmatchedBefore, newBottomMatch, ...newUnmatchedAfter)
         newResults.push(newBottomMatch, ...newUnmatchedAfter)
       }
     }
-
-    // keep doing this for both sides ("left" = baseTextSubsegments and "right" = ttsSegments) until the levenshtein distance
-    // is no longer improved by adding more segments.
-    // then, IF there was any improvement, add the matched segments to the results.
-    //
-    // then, start the process again,
-    // but this time, start from the opposite edge.
-    //
-    // continue until EITHER the levenshtein distance is not improved by adding more segments,
-    // OR a segment was met that is already matched in the results.
   }
 
   return newResults
@@ -310,12 +294,12 @@ function findFirstImprovementFromTop({
       subsegments: {
         start: region.subsegments.start + baseOffset,
         end: region.subsegments.start + baseOffset + 1,
-        normalizedText: baseTextSubsegments[region.subsegments.start + baseOffset].normalizedText,
+        normalizedText: baseTextSubsegments[region.subsegments.start + baseOffset]?.normalizedText,
       },
       ttsSegments: {
         start: region.ttsSegments.start + ttsOffset,
         end: region.ttsSegments.start + ttsOffset + 1,
-        normalizedText: ttsSegments[region.ttsSegments.start + ttsOffset].normalizedText,
+        normalizedText: ttsSegments[region.ttsSegments.start + ttsOffset]?.normalizedText,
       },
     }
   }
@@ -327,8 +311,8 @@ function findFirstImprovementFromTop({
   }
   for (
     let offsets = { baseOffset: 0, ttsOffset: 0 };
-    region.subsegments.start + offsets.baseOffset <= region.subsegments.end &&
-    region.ttsSegments.start + offsets.ttsOffset <= region.ttsSegments.end;
+    region.subsegments.start + offsets.baseOffset < region.subsegments.end &&
+    region.ttsSegments.start + offsets.ttsOffset < region.ttsSegments.end;
     offsets = increaseOffsets(offsets.baseOffset, offsets.ttsOffset)
   ) {
     const topPairing = getTopPairingWithOffsets(offsets.baseOffset, offsets.ttsOffset)
@@ -523,4 +507,28 @@ function expandImprovementUp({
     'ttsSegments',
   )
   return crawlUpRight || crawlUpLeft || null
+}
+
+// Define a threshold for similarity, e.g., 60% similarity
+const SIMILARITY_THRESHOLD = 0.8
+
+function passesSimilarityThreshold(
+  improvement: Pairing | null,
+  similarityThreshold: number = SIMILARITY_THRESHOLD,
+): boolean {
+  if (!improvement) return false
+
+  const subsegmentText = improvement.subsegments.normalizedText
+  const ttsSegmentText = improvement.ttsSegments.normalizedText
+
+  // Calculate the Levenshtein distance
+  const distance = levenshtein.get(subsegmentText, ttsSegmentText)
+
+  // Calculate the maximum possible length for normalization
+  const maxLength = Math.max(subsegmentText.length, ttsSegmentText.length)
+
+  // Calculate the similarity ratio
+  const similarityRatio = (maxLength - distance) / maxLength
+
+  return similarityRatio >= similarityThreshold
 }

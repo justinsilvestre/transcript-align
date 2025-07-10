@@ -1,6 +1,6 @@
 import * as levenshtein from 'fast-levenshtein'
 import { findIndexBetween } from './findIndexBetween'
-import { MatchStatusRegion, getRegionsByMatchStatus } from './getRegionsByMatchStatus'
+import { MatchStatusRegion, getRegionsByMatchStatus, isMatch } from './getRegionsByMatchStatus'
 import {
   BaseTextSubsegment,
   BaseTextSegment,
@@ -10,7 +10,6 @@ import {
 
 export function findMatches(options: {
   baseTextSubsegments: BaseTextSubsegment[]
-  baseTextSegments: BaseTextSegment[]
   ttsSegments: TextToSpeechSegment[]
   minMatchLength: number
   levenshteinThreshold: number
@@ -22,7 +21,6 @@ export function findMatches(options: {
 }) {
   const {
     baseTextSubsegments,
-    baseTextSegments,
     ttsSegments,
     minMatchLength,
     levenshteinThreshold,
@@ -67,7 +65,7 @@ export function findMatches(options: {
     const matchFound = ttsSegmentMatchIndex !== -1
 
     if (matchFound) {
-      searchStartIndex = ttsSegmentMatchIndex + 1
+      // searchStartIndex = ttsSegmentMatchIndex + 1
       results.push({
         subsegments: {
           start: subsegment.subsegmentIndex,
@@ -90,7 +88,6 @@ export function findMatches(options: {
   return results
 }
 export function continueFindingMatches(options: {
-  baseTextSegments: BaseTextSegment[]
   baseTextSubsegments: BaseTextSubsegment[]
   ttsSegments: TextToSpeechSegment[]
   regionsSoFar: MatchStatusRegion[]
@@ -99,7 +96,6 @@ export function continueFindingMatches(options: {
   pass?: string
 }) {
   const {
-    baseTextSegments,
     baseTextSubsegments,
     ttsSegments,
     regionsSoFar: regions,
@@ -113,9 +109,7 @@ export function continueFindingMatches(options: {
   let regionIndex = 0
   for (const region of regions) {
     if (region.isMatching) {
-      for (const match of region.results || []) {
-        newMatchResults.push(match)
-      }
+      newMatchResults.push(...region.results)
     } else {
       const previousRegion = regions[regionIndex - 1]
       if (previousRegion && !previousRegion.isMatching)
@@ -125,7 +119,6 @@ export function continueFindingMatches(options: {
         throw new Error('Cannot continue finding matches without a matching region after an unmatched one.')
       const results = findMatches({
         baseTextSubsegments: baseTextSubsegments,
-        baseTextSegments: baseTextSegments,
         ttsSegments: ttsSegments,
         minMatchLength,
         levenshteinThreshold,
@@ -143,4 +136,24 @@ export function continueFindingMatches(options: {
     results: newMatchResults,
     regions: getRegionsByMatchStatus(newMatchResults, ttsSegments.length),
   }
+}
+
+function getMatchResultElements(
+  baseTextSubsegments: BaseTextSubsegment[],
+  ttsSegments: TextToSpeechSegment[],
+  matchResult: BaseTextSubsegmentsMatchResult,
+) {
+  if (isMatch(matchResult)) {
+    const baseText = getElementsInRange(baseTextSubsegments, matchResult.subsegments)
+    const ttsText = getElementsInRange(ttsSegments, matchResult.ttsSegments)
+    return { baseText, ttsText }
+  } else {
+    return {
+      baseText: [baseTextSubsegments[matchResult.baseTextSubsegmentIndex]],
+      ttsText: [],
+    }
+  }
+}
+function getElementsInRange<T>(elements: T[], range: { start: number; end: number }): T[] {
+  return elements.slice(range.start, range.end)
 }

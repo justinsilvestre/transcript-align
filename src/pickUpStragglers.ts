@@ -5,7 +5,6 @@ import {
   TextToSpeechSegment,
   BaseTextSubsegmentsMatchResult,
   MatchedBaseTextSubsegments,
-  UnmatchedBaseTextSubsegment,
 } from './syncTranscriptWithSubtitles'
 
 export function pickUpStragglers({
@@ -21,14 +20,6 @@ export function pickUpStragglers({
 }): BaseTextSubsegmentsMatchResult[] {
   const results: BaseTextSubsegmentsMatchResult[] = []
 
-  // const downwardMovedUnmatchedRegions = new Set<number>()
-  // const upwardMovedMatchedRegions = new Set<number>()
-  let firstResultOverrideForNextMatchRegion: MatchedBaseTextSubsegments | null = null
-  const getFirstResultOverride = () => {
-    const result = firstResultOverrideForNextMatchRegion
-    firstResultOverrideForNextMatchRegion = null
-    return result
-  }
   let removeFirstResultFromNextNonmatchRegion = false
 
   for (let i = 0; i < regions.length; i++) {
@@ -177,6 +168,29 @@ export function bringInStragglerFromNextRegion(
     ]
   }
 
+  // finally, just the tts
+  if (potentialStragglerTtsSegment) {
+    const isTtsImprovement = doesChangeImproveLevenshteinDistance(
+      matchRegionLastTtsSegmentText,
+      matchRegionLastSubsegmentText,
+      matchRegionLastTtsSegmentText + potentialStragglerTtsSegment.normalizedText,
+      matchRegionLastSubsegmentText,
+      log,
+    )
+    if (isTtsImprovement) {
+      return [
+        ...regionResults.slice(0, -1),
+        {
+          ...matchRegionLastSegment,
+          ttsSegments: {
+            ...matchRegionLastSegment.ttsSegments,
+            end: matchRegionLastSegment.ttsSegments.end + 1,
+          },
+        },
+      ]
+    }
+  }
+
   return null
 }
 
@@ -304,6 +318,18 @@ function bringInStragglerFromPreviousRegion(
           matchRegionFirstSubsegmentText,
         ],
       )
+    if (isTtsImprovement) {
+      return [
+        {
+          ...matchRegionFirstSegment,
+          ttsSegments: {
+            ...matchRegionFirstSegment.ttsSegments,
+            start: matchRegionFirstSegment.ttsSegments.start - 1,
+          },
+        },
+        ...matchRegionSegments.slice(1),
+      ]
+    }
   }
 
   return null
@@ -340,8 +366,4 @@ export function getNormalizedText<T extends { normalizedText: string }>(
     .slice(start, end)
     .map((element) => element.normalizedText)
     .join('')
-}
-
-function getElementsInRange<T>(array: T[], { start, end }: { start: number; end: number }): T[] {
-  return array.slice(start, end)
 }
